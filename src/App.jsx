@@ -11,6 +11,20 @@ import 'jspdf-autotable';
 import { api } from './api';
 import { setupNotifications, shareToWhatsApp } from './notifications';
 
+const getDriveImageUrl = (url) => {
+  if (!url) return null;
+  if (!url.includes('drive.google.com')) return url;
+  
+  let fileId = '';
+  if (url.includes('/d/')) {
+    fileId = url.split('/d/')[1].split('/')[0];
+  } else if (url.includes('id=')) {
+    fileId = url.split('id=')[1].split('&')[0];
+  }
+  
+  return fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : url;
+};
+
 export default function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('ergomedi_user');
@@ -385,9 +399,24 @@ export default function App() {
                        <Share2 size={18} onClick={() => shareToWhatsApp(med.name, progress)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
                        <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
                        <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
-                       <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
+                     <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
                     </div>
                   </div>
+                  
+                  {med.prescriptionUrl && (
+                    <div style={{ marginBottom: '20px', borderRadius: '16px', overflow: 'hidden', height: '120px', border: '1px solid var(--border)', background: 'var(--bg-main)', position: 'relative' }}>
+                       <img 
+                         src={getDriveImageUrl(med.prescriptionUrl)} 
+                         alt="Receta" 
+                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                         onClick={() => window.open(med.prescriptionUrl, '_blank')}
+                       />
+                       <div style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '8px', fontSize: '0.6rem', color: 'white', fontWeight: 700 }}>
+                          VER RECETA
+                       </div>
+                    </div>
+                  )}
+
                   <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
                     <div className="progress-bar" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
                   </div>
@@ -503,7 +532,7 @@ export default function App() {
               <div className="input-group">
                 <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>RECETA MÉDICA (DRIVE)</label>
                 <div style={{ position: 'relative', height: '140px', background: 'var(--bg-main)', borderRadius: '20px', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                   {formData.prescriptionUrl ? <img src={formData.prescriptionUrl.replace('open?', 'uc?export=view&')} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={32} style={{ color: 'var(--text-muted)' }} />}
+                   {formData.prescriptionUrl ? <img src={getDriveImageUrl(formData.prescriptionUrl)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={32} style={{ color: 'var(--text-muted)' }} />}
                    <input type="file" accept="image/*" onChange={handleFileUpload} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
                 </div>
               </div>
