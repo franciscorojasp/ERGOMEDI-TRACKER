@@ -4,7 +4,7 @@ import {
   Calendar, AlertCircle, Settings, X, Save, FileText, 
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
-  Send, Share2, Phone, Mail, ArrowRight
+  Send, Share2, Phone, Mail, ArrowRight, UserPlus
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -26,6 +26,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginIdentifier, setLoginIdentifier] = useState("");
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
   
   const audioRef = useRef(null);
 
@@ -55,26 +56,33 @@ export default function App() {
         api.getMeds(uid),
         api.getHistory(uid)
       ]);
-      setMeds(medsList);
-      setHistoryLogs(historyList);
-      setupNotifications(medsList);
+      setMeds(medsList || []);
+      setHistoryLogs(historyList || []);
+      if (medsList) setupNotifications(medsList);
     } catch (err) {
-      setErrorMessage("Error de conexión.");
+      setErrorMessage("Error de conexión con el servidor.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     if (!loginIdentifier) return;
     setLoading(true);
+    setErrorMessage("");
     try {
+      // In our current backend, login and register are handled by the same action
+      // but we present it differently to the user for clarity.
       const userData = await api.login(loginIdentifier);
-      setUser(userData);
-      localStorage.setItem('ergomedi_user', JSON.stringify(userData));
+      if (userData.error) {
+        setErrorMessage(userData.error);
+      } else {
+        setUser(userData);
+        localStorage.setItem('ergomedi_user', JSON.stringify(userData));
+      }
     } catch (err) {
-      setErrorMessage("Error al iniciar sesión.");
+      setErrorMessage("Error de servidor. Revisa tu conexión.");
     } finally {
       setLoading(false);
     }
@@ -85,6 +93,7 @@ export default function App() {
     localStorage.removeItem('ergomedi_user');
   };
 
+  // ... (rest of logic remains same)
   const handleFrequencyChange = (newFreq) => {
     const freq = parseInt(newFreq);
     setFormData(prev => {
@@ -189,10 +198,14 @@ export default function App() {
         <div className="logo" style={{ justifyContent: 'center', marginBottom: '32px', fontSize: '1.8rem' }}>
           <Pill size={40} /> <span>ERGO</span>MEDI
         </div>
-        <h2 style={{ marginBottom: '8px', fontWeight: 800 }}>Bienvenido</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '32px' }}>Ingresa tu correo o teléfono para continuar</p>
+        <h2 style={{ marginBottom: '8px', fontWeight: 800 }}>
+          {authMode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '32px' }}>
+          {authMode === 'login' ? 'Ingresa tus datos para acceder' : 'Regístrate para empezar tu control'}
+        </p>
         
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ position: 'relative' }}>
              <input 
                type="text" 
@@ -203,13 +216,30 @@ export default function App() {
                required 
                style={{ paddingLeft: '45px' }}
              />
-             <Mail size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+             {loginIdentifier.includes('@') ? 
+               <Mail size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} /> :
+               <Phone size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+             }
           </div>
           <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            Acceder <ArrowRight size={18} />
+            {authMode === 'login' ? 'Acceder' : 'Registrarme'} <ArrowRight size={18} />
           </button>
         </form>
-        {errorMessage && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '16px' }}>{errorMessage}</p>}
+
+        <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
+           <button 
+             onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+             style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 auto' }}
+           >
+             {authMode === 'login' ? <><UserPlus size={18} /> No tengo cuenta, registrarme</> : <><User size={18} /> Ya tengo cuenta, entrar</>}
+           </button>
+        </div>
+
+        {errorMessage && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '12px', fontSize: '0.8rem', marginTop: '20px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            {errorMessage}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -225,7 +255,9 @@ export default function App() {
         </div>
         <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--bg-card)', padding: '8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
            <User size={18} />
-           <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>{user.identifier.split('@')[0]}</span>
+           <span style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>
+             {user.identifier.includes('@') ? user.identifier.split('@')[0] : 'MI PERFIL'}
+           </span>
         </div>
       </header>
 
@@ -257,6 +289,14 @@ export default function App() {
             <button onClick={() => exportPDF()} className="btn-primary" style={{ marginBottom: '24px' }}>
               <FileText size={18} /> Descargar Reporte Maestro (PDF)
             </button>
+
+            {meds.length === 0 && !loading && (
+              <div className="card" style={{ textAlign: 'center', padding: '40px', border: '2px dashed var(--border)', background: 'transparent' }}>
+                <Pill size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 16px', opacity: 0.5 }} />
+                <p style={{ color: 'var(--text-muted)', fontWeight: 700 }}>No tienes planes activos.</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Usa el botón + para agregar uno.</p>
+              </div>
+            )}
 
             {meds.map(med => {
               const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
@@ -295,6 +335,9 @@ export default function App() {
         ) : activeTab === 'historial' ? (
           <div>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '24px' }}>Historial</h2>
+            {historyLogs.length === 0 && (
+               <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>No hay registros aún.</p>
+            )}
             {historyLogs.map(log => (
               <div key={log.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', padding: '16px' }}>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
