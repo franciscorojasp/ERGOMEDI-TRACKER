@@ -1,0 +1,22 @@
+{
+  "short_name": "ErgoMedi",
+  "name": "ERGOMEDI-TRACKER",
+  "icons": [
+    {
+      "src": "/pill.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/pill.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0d0e12",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#0d7377",
+  "description": "Seguimiento profesional de medicación"
+}
