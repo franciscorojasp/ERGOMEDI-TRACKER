@@ -2,18 +2,13 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxpmkzeyLvd4t2MtxEHDds1
 
 export const api = {
   async login(identifier) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') {
-      return { id: 'local-user', identifier: identifier };
-    }
-    const response = await fetch(`${API_URL}?action=login&identifier=${identifier}`);
-    return await response.json();
+    return this.googleFetch(`${API_URL}?action=login&identifier=${identifier}`);
   },
 
   async getMeds(userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return this.getLocalMeds();
+    if (!API_URL || API_URL.includes('YOUR_')) return this.getLocalMeds();
     try {
-      const response = await fetch(`${API_URL}?action=getMeds&userId=${userId}`);
-      const data = await response.json();
+      const data = await this.googleFetch(`${API_URL}?action=getMeds&userId=${userId}`);
       this.syncLocalMeds(data);
       return data;
     } catch (error) {
@@ -22,13 +17,12 @@ export const api = {
   },
 
   async saveMed(med, userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return this.saveLocalMed(med);
+    if (!API_URL || API_URL.includes('YOUR_')) return this.saveLocalMed(med);
     try {
-      const response = await fetch(API_URL, {
+      return await this.googleFetch(API_URL, {
         method: 'POST',
         body: JSON.stringify({ action: 'saveMed', data: med, userId }),
       });
-      return await response.json();
     } catch (error) {
       this.saveLocalMed(med);
       return { success: true, offline: true };
@@ -36,13 +30,12 @@ export const api = {
   },
 
   async deleteMed(id, userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return this.deleteLocalMed(id);
+    if (!API_URL || API_URL.includes('YOUR_')) return this.deleteLocalMed(id);
     try {
-      await fetch(API_URL, {
+      return await this.googleFetch(API_URL, {
         method: 'POST',
         body: JSON.stringify({ action: 'deleteMed', id, userId }),
       });
-      return { success: true };
     } catch (error) {
       this.deleteLocalMed(id);
       return { success: true, offline: true };
@@ -50,10 +43,9 @@ export const api = {
   },
 
   async getHistory(userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return this.getLocalHistory();
+    if (!API_URL || API_URL.includes('YOUR_')) return this.getLocalHistory();
     try {
-      const response = await fetch(`${API_URL}?action=getHistory&userId=${userId}`);
-      const data = await response.json();
+      const data = await this.googleFetch(`${API_URL}?action=getHistory&userId=${userId}`);
       this.syncLocalHistory(data);
       return data;
     } catch (error) {
@@ -62,13 +54,12 @@ export const api = {
   },
 
   async logHistory(log, userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return this.saveLocalHistory(log);
+    if (!API_URL || API_URL.includes('YOUR_')) return this.saveLocalHistory(log);
     try {
-      await fetch(API_URL, {
+      return await this.googleFetch(API_URL, {
         method: 'POST',
         body: JSON.stringify({ action: 'logHistory', data: log, userId }),
       });
-      return { success: true };
     } catch (error) {
       this.saveLocalHistory(log);
       return { success: true, offline: true };
@@ -76,13 +67,13 @@ export const api = {
   },
 
   async uploadPrescription(file, userId) {
-    if (!API_URL || API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL') return '';
+    if (!API_URL || API_URL.includes('YOUR_')) return '';
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = reader.result.split(',')[1];
         try {
-          const response = await fetch(API_URL, {
+          const res = await this.googleFetch(API_URL, {
             method: 'POST',
             body: JSON.stringify({
               action: 'upload',
@@ -92,13 +83,33 @@ export const api = {
               fileName: file.name
             })
           });
-          const res = await response.json();
           resolve(res.url);
         } catch (e) { reject(e); }
       };
       reader.onerror = (e) => reject(e);
       reader.readAsDataURL(file);
     });
+  },
+
+  /**
+   * Helper to handle Google Apps Script redirects and CORS
+   */
+  async googleFetch(url, options = {}) {
+    // Default fetch for GAS needs mode: 'cors' and redirect: 'follow'
+    const finalOptions = {
+      ...options,
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'follow'
+    };
+
+    const response = await fetch(url, finalOptions);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return await response.json();
   },
 
   // LocalStorage Fallback
