@@ -188,6 +188,23 @@ export default function App() {
     }
   };
 
+  const updateProfile = async (profileData) => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const res = await api.updateProfile(user.id, profileData);
+      if (res.success) {
+        const updatedUser = { ...user, ...profileData };
+        setUser(updatedUser);
+        localStorage.setItem('ergomedi_user', JSON.stringify(updatedUser));
+      }
+    } catch (err) {
+      setErrorMessage("Error al actualizar perfil.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // PDF Export remains same
   const exportPDF = async (specificMed = null) => {
     const docPdf = new jsPDF();
@@ -410,15 +427,62 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <div className="animate-fade" style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px', textAlign: 'left' }}>AJUSTES</h2>
-            <div className="card" style={{ padding: '48px 32px' }}>
-               <Shield size={60} style={{ color: 'var(--primary-light)', margin: '0 auto 24px' }} />
-               <h3 style={{ fontWeight: 900 }}>{user.identifier}</h3>
-               <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase', marginBottom: '32px' }}>{user.role === 'admin' ? 'ADMINISTRADOR' : 'USUARIO'}</p>
-               <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444' }}>
-                 <LogOut size={20} /> CERRAR SESIÓN
-               </button>
+          <div className="animate-fade">
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px' }}>AJUSTES</h2>
+            <div className="card" style={{ padding: '32px' }}>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+                  <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                     <User size={32} style={{ color: 'var(--primary-light)' }} />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                     <h3 style={{ fontWeight: 900, fontSize: '1.2rem' }}>{user.identifier}</h3>
+                     <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase' }}>{user.role === 'admin' ? 'ADMINISTRADOR' : 'PACIENTE'}</p>
+                  </div>
+               </div>
+
+               <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div className="input-group">
+                    <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                       <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TELÉFONO (PARA WHATSAPP)
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="Ej: +58424..." 
+                      value={user.phone || ''} 
+                      onChange={e => setUser({...user, phone: e.target.value})}
+                      onBlur={() => updateProfile({ phone: user.phone })}
+                      style={{ background: 'var(--bg-main)' }} 
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                       <Shield size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
+                    </label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="Obtenlo en callmebot.com" 
+                      value={user.waApiKey || ''} 
+                      onChange={e => setUser({...user, waApiKey: e.target.value})}
+                      onBlur={() => updateProfile({ waApiKey: user.waApiKey })}
+                      style={{ background: 'var(--bg-main)' }} 
+                    />
+                    <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                      * El sistema enviará alertas automáticas por WhatsApp 10 y 5 minutos antes de cada toma.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                    <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444', flex: 1 }}>
+                      <LogOut size={20} /> SALIR
+                    </button>
+                    <button onClick={() => window.open('https://www.callmebot.com/blog/free-api-whatsapp-messages/', '_blank')} className="btn-primary" style={{ background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)', flex: 1.5 }}>
+                      <Activity size={18} /> OBTENER API KEY
+                    </button>
+                  </div>
+               </div>
             </div>
           </div>
         )}

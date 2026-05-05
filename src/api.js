@@ -5,6 +5,10 @@ export const api = {
     return this.jsonp('login', { identifier });
   },
 
+  async updateProfile(userId, profileData) {
+    return this.jsonp('updateProfile', { userId, data: JSON.stringify(profileData) });
+  },
+
   async getMeds(userId) {
     try {
       const data = await this.jsonp('getMeds', { userId });
