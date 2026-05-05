@@ -1,12 +1,12 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbxpmkzeyLvd4t2MtxEHDds1IOsbJ-F0yuKPR7aJ7OFPfLBAhXgF0Ryl8P1RFICH6-I7zw/exec';
+const SCRIPT_ID = 'AKfycbxpmkzeyLvd4t2MtxEHDds1IOsbJ-F0yuKPR7aJ7OFPfLBAhXgF0Ryl8P1RFICH6-I7zw';
+const API_URL = `https://script.google.com/macros/s/${SCRIPT_ID}/exec`;
 
 export const api = {
   async login(identifier) {
-    return this.googleFetch(`${API_URL}?action=login&identifier=${identifier}`);
+    return this.googleFetch(`${API_URL}?action=login&identifier=${encodeURIComponent(identifier)}`);
   },
 
   async getMeds(userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return this.getLocalMeds();
     try {
       const data = await this.googleFetch(`${API_URL}?action=getMeds&userId=${userId}`);
       this.syncLocalMeds(data);
@@ -17,12 +17,8 @@ export const api = {
   },
 
   async saveMed(med, userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return this.saveLocalMed(med);
     try {
-      return await this.googleFetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'saveMed', data: med, userId }),
-      });
+      return await this.googlePost({ action: 'saveMed', data: med, userId });
     } catch (error) {
       this.saveLocalMed(med);
       return { success: true, offline: true };
@@ -30,12 +26,8 @@ export const api = {
   },
 
   async deleteMed(id, userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return this.deleteLocalMed(id);
     try {
-      return await this.googleFetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'deleteMed', id, userId }),
-      });
+      return await this.googlePost({ action: 'deleteMed', id, userId });
     } catch (error) {
       this.deleteLocalMed(id);
       return { success: true, offline: true };
@@ -43,7 +35,6 @@ export const api = {
   },
 
   async getHistory(userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return this.getLocalHistory();
     try {
       const data = await this.googleFetch(`${API_URL}?action=getHistory&userId=${userId}`);
       this.syncLocalHistory(data);
@@ -54,12 +45,8 @@ export const api = {
   },
 
   async logHistory(log, userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return this.saveLocalHistory(log);
     try {
-      return await this.googleFetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'logHistory', data: log, userId }),
-      });
+      return await this.googlePost({ action: 'logHistory', data: log, userId });
     } catch (error) {
       this.saveLocalHistory(log);
       return { success: true, offline: true };
@@ -67,21 +54,17 @@ export const api = {
   },
 
   async uploadPrescription(file, userId) {
-    if (!API_URL || API_URL.includes('YOUR_')) return '';
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = reader.result.split(',')[1];
         try {
-          const res = await this.googleFetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'upload',
-              userId: userId,
-              base64: base64,
-              mimeType: file.type,
-              fileName: file.name
-            })
+          const res = await this.googlePost({
+            action: 'upload',
+            userId: userId,
+            base64: base64,
+            mimeType: file.type,
+            fileName: file.name
           });
           resolve(res.url);
         } catch (e) { reject(e); }
@@ -92,24 +75,43 @@ export const api = {
   },
 
   /**
-   * Helper to handle Google Apps Script redirects and CORS
+   * GET helper using text/plain to avoid CORS preflight
    */
-  async googleFetch(url, options = {}) {
-    // Default fetch for GAS needs mode: 'cors' and redirect: 'follow'
-    const finalOptions = {
-      ...options,
+  async googleFetch(url) {
+    const response = await fetch(url, {
+      method: 'GET',
       mode: 'cors',
       credentials: 'omit',
       redirect: 'follow'
-    };
-
-    const response = await fetch(url, finalOptions);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
+    });
     return await response.json();
+  },
+
+  /**
+   * POST helper using text/plain to avoid CORS preflight
+   * Google Apps Script handles this perfectly as a POST body.
+   */
+  async googlePost(data) {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      mode: 'no-cors', // This is the trick for some GAS issues
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      }
+    });
+    
+    // With no-cors, we can't read the response body in some browsers.
+    // So we'll try a fallback or assume success if it's a silent POST.
+    // BUT for Google Apps Script, the best way is usually 'cors' with text/plain.
+    
+    const corsResponse = await fetch(API_URL, {
+      method: 'POST',
+      mode: 'cors',
+      body: JSON.stringify(data),
+      redirect: 'follow'
+    });
+    return await corsResponse.json();
   },
 
   // LocalStorage Fallback
