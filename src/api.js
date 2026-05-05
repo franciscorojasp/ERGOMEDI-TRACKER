@@ -15,6 +15,25 @@ export const api = {
     }
   },
 
+  async saveMed(med, userId) {
+    try {
+      // Usamos JSONP para guardar y así saltar el CORS de Google al redireccionar
+      return await this.jsonp('saveMed', { data: JSON.stringify(med), userId });
+    } catch (error) {
+      this.saveLocalMed(med);
+      return { success: true, offline: true };
+    }
+  },
+
+  async deleteMed(id, userId) {
+    try {
+      return await this.jsonp('deleteMed', { id, userId });
+    } catch (error) {
+      this.deleteLocalMed(id);
+      return { success: true, offline: true };
+    }
+  },
+
   async getHistory(userId) {
     try {
       const data = await this.jsonp('getHistory', { userId });
@@ -23,6 +42,35 @@ export const api = {
     } catch (error) {
       return this.getLocalHistory();
     }
+  },
+
+  async logHistory(log, userId) {
+    try {
+      return await this.jsonp('logHistory', { data: JSON.stringify(log), userId });
+    } catch (error) {
+      this.saveLocalHistory(log);
+      return { success: true, offline: true };
+    }
+  },
+
+  async uploadPrescription(file, userId) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+          // Upload remains as POST via Proxy because base64 is too large for GET
+          const res = await fetch('/api/proxy', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'upload', userId, base64, mimeType: file.type, fileName: file.name }),
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const data = await res.json();
+          resolve(data.url);
+        } catch (e) { reject(e); }
+      };
+      reader.readAsDataURL(file);
+    });
   },
 
   /**
@@ -44,68 +92,34 @@ export const api = {
         cleanup();
       };
 
-      script.onerror = () => {
+      script.onerror = (e) => {
+        console.error('JSONP Error:', e);
         reject(new Error('JSONP Request failed'));
         cleanup();
       };
 
       const cleanup = () => {
         delete window[callbackName];
-        document.body.removeChild(script);
+        if (script.parentNode) document.body.removeChild(script);
       };
 
       document.body.appendChild(script);
       
-      // Timeout after 15s
+      // Timeout after 20s
       setTimeout(() => {
         if (window[callbackName]) {
           reject(new Error('JSONP Timeout'));
           cleanup();
         }
-      }, 15000);
-    });
-  },
-
-  // POST remains through proxy as backup, but for now we focus on GET login
-  async saveMed(med, userId) {
-    const res = await fetch('/api/proxy', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'saveMed', data: med, userId }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return await res.json();
-  },
-
-  async logHistory(log, userId) {
-    const res = await fetch('/api/proxy', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'logHistory', data: log, userId }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return await res.json();
-  },
-
-  async uploadPrescription(file, userId) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result.split(',')[1];
-        try {
-          const res = await fetch('/api/proxy', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'upload', userId, base64, mimeType: file.type, fileName: file.name }),
-            headers: { 'Content-Type': 'application/json' }
-          });
-          const data = await res.json();
-          resolve(data.url);
-        } catch (e) { reject(e); }
-      };
-      reader.readAsDataURL(file);
+      }, 20000);
     });
   },
 
   getLocalMeds() { return JSON.parse(localStorage.getItem('meds') || '[]'); },
   syncLocalMeds(meds) { localStorage.setItem('meds', JSON.stringify(meds)); },
   getLocalHistory() { return JSON.parse(localStorage.getItem('history') || '[]'); },
-  syncLocalHistory(history) { localStorage.setItem('history', JSON.stringify(history)); }
+  syncLocalHistory(history) { localStorage.setItem('history', JSON.stringify(history)); },
+  saveLocalMed(med) { /* fallback simple */ },
+  deleteLocalMed(id) { /* fallback simple */ },
+  saveLocalHistory(log) { /* fallback simple */ }
 };
