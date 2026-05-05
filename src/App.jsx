@@ -21,7 +21,7 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState('dashboard');
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -45,12 +45,14 @@ export default function App() {
   const [formData, setFormData] = useState(initialFormState);
 
   useEffect(() => {
-    if (user) fetchData(user.id);
+    if (user) fetchData(user.id, true);
     else setLoading(false);
   }, [user]);
 
-  const fetchData = async (uid) => {
-    setLoading(true);
+  const fetchData = async (uid, showLoading = false) => {
+    if (showLoading) setLoading(true);
+    else setBackgroundSyncing(true);
+    
     try {
       const [medsList, historyList] = await Promise.all([
         api.getMeds(uid),
@@ -60,9 +62,10 @@ export default function App() {
       setHistoryLogs(historyList || []);
       if (medsList) setupNotifications(medsList);
     } catch (err) {
-      setErrorMessage("Error de conexión con el servidor.");
+      console.error("Sync error:", err);
     } finally {
       setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -102,27 +105,39 @@ export default function App() {
 
   const handleSaveMed = async (e) => {
     e.preventDefault();
-    if (!formData.name || saving || !user) return;
-    setSaving(true);
+    if (!formData.name || !user) return;
+    
+    const dataToSave = { ...formData };
+    if (editingId) dataToSave.id = editingId;
+    
+    // Optimistic Update
+    const oldMeds = [...meds];
+    if (editingId) {
+      setMeds(meds.map(m => m.id === editingId ? dataToSave : m));
+    } else {
+      const tempId = 'temp-' + Date.now();
+      setMeds([...meds, { ...dataToSave, id: tempId }]);
+    }
+    
+    closeModal();
+
     try {
-      const dataToSave = { ...formData };
-      if (editingId) dataToSave.id = editingId;
       await api.saveMed(dataToSave, user.id);
-      await fetchData(user.id);
-      closeModal();
+      fetchData(user.id); // Sync in background
     } catch (err) {
-      setErrorMessage("Error al guardar.");
-    } finally {
-      setSaving(false);
+      setMeds(oldMeds);
+      setErrorMessage("Error al sincronizar con la nube.");
     }
   };
 
   const deleteMed = async (id) => {
     if (!window.confirm("¿Eliminar este plan?")) return;
+    const oldMeds = [...meds];
+    setMeds(meds.filter(m => m.id !== id));
     try {
       await api.deleteMed(id, user.id);
-      await fetchData(user.id);
     } catch (err) {
+      setMeds(oldMeds);
       setErrorMessage("Error al eliminar.");
     }
   };
@@ -131,50 +146,62 @@ export default function App() {
     const file = e.target.files[0];
     if (!file || !user) return;
     try {
-      setSaving(true);
+      setBackgroundSyncing(true);
       const url = await api.uploadPrescription(file, user.id);
       setFormData({ ...formData, prescriptionUrl: url });
     } catch (err) {
       setErrorMessage("Error al subir imagen.");
     } finally {
-      setSaving(false);
+      setBackgroundSyncing(false);
     }
   };
 
   const markAsTaken = async (med) => {
     if (!user) return;
+    const today = new Date().toISOString().split('T')[0];
+    const timestamp = new Date().toISOString();
+    
+    // Optimistic Update
+    const updatedMed = { 
+      ...med, 
+      dosesTaken: (med.dosesTaken || 0) + 1, 
+      takenTodayCount: (med.lastResetDate === today ? (med.takenTodayCount || 0) : 0) + 1, 
+      lastResetDate: today, 
+      lastTakenDate: timestamp 
+    };
+    
+    setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
+    if (soundEnabled && audioRef.current) audioRef.current.play();
+
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const timestamp = new Date().toISOString();
-      await api.logHistory({ medId: med.id, medName: med.name, dosage: med.dosage, timestamp, date: today }, user.id);
-      const updatedMed = { ...med, dosesTaken: (med.dosesTaken || 0) + 1, takenTodayCount: (med.lastResetDate === today ? (med.takenTodayCount || 0) : 0) + 1, lastResetDate: today, lastTakenDate: timestamp };
+      await api.logHistory({ 
+        medId: med.id, 
+        medName: med.name, 
+        dosage: med.dosage, 
+        timestamp, 
+        date: today 
+      }, user.id);
       await api.saveMed(updatedMed, user.id);
-      await fetchData(user.id);
-      if (soundEnabled && audioRef.current) audioRef.current.play();
+      fetchData(user.id); // Refresh history in background
     } catch (err) {
-      setErrorMessage("Error al registrar toma.");
+      console.error("Error logging:", err);
     }
   };
 
+  // PDF Export remains same
   const exportPDF = async (specificMed = null) => {
     const docPdf = new jsPDF();
-    
-    // Header Branding
     docPdf.setFillColor(13, 115, 119);
     docPdf.rect(0, 0, 210, 40, 'F');
-    
     docPdf.setFontSize(24);
     docPdf.setTextColor(255, 255, 255);
     docPdf.text("ERGOMEDI-TRACKER", 105, 25, { align: 'center' });
-    
     docPdf.setFontSize(10);
     docPdf.text("SISTEMA PROFESIONAL DE CONTROL MÉDICO", 105, 33, { align: 'center' });
-
     docPdf.setTextColor(100);
     docPdf.setFontSize(12);
     docPdf.text(specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : "REPORTE CONSOLIDADO DEL PLAN", 15, 55);
     docPdf.text(`FECHA: ${new Date().toLocaleDateString()}`, 195, 55, { align: 'right' });
-
     const targetMeds = specificMed ? [specificMed] : meds;
     const body = targetMeds.map(m => [
       m.name.toUpperCase(),
@@ -183,7 +210,6 @@ export default function App() {
       `${m.dosesTaken} / ${(m.durationDays || 0) * (m.timesPerDay || 1)}`,
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
-
     docPdf.autoTable({
       startY: 65,
       head: [['MEDICAMENTO', 'DOSIS', 'HORARIOS', 'TOMAS ACUM.', 'PROGRESO']],
@@ -191,12 +217,6 @@ export default function App() {
       headStyles: { fillColor: [13, 115, 119], fontWeight: 'bold' },
       styles: { fontSize: 9, cellPadding: 5 }
     });
-
-    // Footer
-    const finalY = docPdf.lastAutoTable.finalY + 20;
-    docPdf.setFontSize(8);
-    docPdf.text("Este reporte ha sido generado por ERGOMEDI-TRACKER.", 105, 285, { align: 'center' });
-
     docPdf.save(`ERGOMEDI_Reporte_${specificMed ? specificMed.name : 'Total'}_${Date.now()}.pdf`);
   };
 
@@ -217,7 +237,7 @@ export default function App() {
            <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
          </h1>
       </div>
-      <p style={{ color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.7rem' }}>Iniciando Tracker...</p>
+      <p style={{ color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.7rem' }}>Cargando Panel...</p>
     </div>
   );
 
@@ -266,7 +286,6 @@ export default function App() {
              {authMode === 'login' ? <><UserPlus size={18} /> ¿NUEVO USUARIO? REGISTRARME</> : <><User size={18} /> ¿YA TIENES CUENTA? LOGUEARME</>}
            </button>
         </div>
-
         {errorMessage && (
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '16px', borderRadius: '16px', fontSize: '0.85rem', marginTop: '24px', border: '1px solid rgba(239, 68, 68, 0.2)', fontWeight: 700 }}>
             <AlertCircle size={16} style={{ display: 'inline', marginRight: '8px' }} /> {errorMessage}
@@ -288,11 +307,14 @@ export default function App() {
             <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
           </span>
         </div>
-        <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
-           <User size={16} style={{ color: 'var(--primary-light)' }} />
-           <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
-             {user.role === 'admin' ? 'SUPER USUARIO' : user.identifier.split('@')[0]}
-           </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {backgroundSyncing && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--primary-light)' }} />}
+          <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
+             <User size={16} style={{ color: 'var(--primary-light)' }} />
+             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
+               {user.role === 'admin' ? 'SUPER USUARIO' : user.identifier.split('@')[0]}
+             </span>
+          </div>
         </div>
       </header>
 
@@ -302,7 +324,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                <h2 style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.5px' }}>DASHBOARD</h2>
                <div style={{ background: 'var(--primary-dim)', color: 'var(--primary-light)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 900, border: '1px solid var(--primary-light)' }}>
-                 {meds.length} PLANES ACTIVOS
+                 {meds.length} PLANES
                </div>
             </div>
 
@@ -323,20 +345,9 @@ export default function App() {
                </div>
             </div>
 
-            <button onClick={() => exportPDF()} className="btn-primary" style={{ marginBottom: '32px', height: '56px', fontSize: '0.9rem', letterSpacing: '0.5px' }}>
-              <FileText size={20} /> DESCARGAR REPORTE MAESTRO ERGOMEDI
+            <button onClick={() => exportPDF()} className="btn-primary" style={{ marginBottom: '32px', height: '56px', fontSize: '0.9rem' }}>
+              <FileText size={20} /> DESCARGAR REPORTE MAESTRO
             </button>
-
-            {meds.length === 0 && !loading && (
-              <div className="card" style={{ textAlign: 'center', padding: '60px 40px', border: '2px dashed var(--border)', background: 'transparent', borderRadius: '32px' }}>
-                <div style={{ position: 'relative', width: '80px', height: '80px', margin: '0 auto 24px' }}>
-                   <Pill size={60} style={{ color: 'var(--text-muted)', opacity: 0.3 }} />
-                   <Plus size={24} style={{ position: 'absolute', bottom: 0, right: 0, color: 'var(--primary-light)' }} />
-                </div>
-                <h3 style={{ fontWeight: 800, marginBottom: '8px' }}>SIN PLANES ACTIVOS</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Empieza tu seguimiento profesional de medicación hoy mismo.</p>
-              </div>
-            )}
 
             {meds.map(med => {
               const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
@@ -349,7 +360,7 @@ export default function App() {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                          <Pill size={16} style={{ color: 'var(--primary-light)' }} />
-                         <h3 style={{ fontWeight: 900, fontSize: '1.1rem', letterSpacing: '-0.3px' }}>{med.name.toUpperCase()}</h3>
+                         <h3 style={{ fontWeight: 900, fontSize: '1.1rem' }}>{med.name.toUpperCase()}</h3>
                       </div>
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{med.dosage} • {med.timesPerDay} veces al día</p>
                     </div>
@@ -360,34 +371,20 @@ export default function App() {
                        <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
                     </div>
                   </div>
-                  
                   <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
                     <div className="progress-bar" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
                   </div>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)' }}>
                     <span style={{ color: 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
-                    <span>{med.dosesTaken} DE {totalNeeded} TOMAS</span>
+                    <span>{med.dosesTaken} / {totalNeeded} TOMAS</span>
                   </div>
-                  
                   <button 
                     disabled={isDoneToday} 
                     onClick={() => markAsTaken(med)} 
                     className="btn-primary" 
-                    style={{ 
-                      marginTop: '20px', 
-                      height: '52px',
-                      background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', 
-                      color: isDoneToday ? 'var(--text-muted)' : 'white',
-                      border: isDoneToday ? '1px solid var(--border)' : 'none',
-                      fontWeight: 900
-                    }}
+                    style={{ marginTop: '20px', height: '52px', background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', color: isDoneToday ? 'var(--text-muted)' : 'white', border: isDoneToday ? '1px solid var(--border)' : 'none' }}
                   >
-                    {isDoneToday ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={18} /> OBJETIVO DIARIO CUMPLIDO</span>
-                    ) : (
-                      `CONFIRMAR TOMA DIARIA (${(med.lastResetDate === new Date().toISOString().split('T')[0] ? (med.takenTodayCount || 0) : 0) + 1}/${med.timesPerDay})`
-                    )}
+                    {isDoneToday ? 'META DIARIA CUMPLIDA' : `CONFIRMAR TOMA (${(med.lastResetDate === new Date().toISOString().split('T')[0] ? (med.takenTodayCount || 0) : 0) + 1}/${med.timesPerDay})`}
                   </button>
                 </div>
               );
@@ -395,27 +392,19 @@ export default function App() {
           </>
         ) : activeTab === 'historial' ? (
           <div className="animate-fade">
-            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px' }}>HISTORIAL DE TOMAS</h2>
-            {historyLogs.length === 0 && (
-               <div className="card" style={{ textAlign: 'center', padding: '60px 20px', border: '1px dashed var(--border)', background: 'transparent' }}>
-                  <History size={40} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
-                  <p style={{ color: 'var(--text-muted)', fontWeight: 700 }}>No hay registros de actividad todavía.</p>
-               </div>
-            )}
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px' }}>HISTORIAL</h2>
             {historyLogs.map(log => (
               <div key={log.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', padding: '20px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                  <div style={{ background: 'var(--primary-dim)', padding: '10px', borderRadius: '12px' }}>
-                    <CheckCircle2 size={22} style={{ color: 'var(--primary-light)' }} />
-                  </div>
+                  <CheckCircle2 size={22} style={{ color: 'var(--primary-light)' }} />
                   <div>
-                    <h4 style={{ fontWeight: 900, fontSize: '0.95rem', letterSpacing: '-0.3px' }}>{log.medName.toUpperCase()}</h4>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{log.dosage}</p>
+                    <h4 style={{ fontWeight: 900, fontSize: '0.95rem' }}>{log.medName.toUpperCase()}</h4>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.dosage}</p>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--primary-light)' }}>{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>{new Date(log.timestamp).toLocaleDateString()}</p>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{new Date(log.timestamp).toLocaleDateString()}</p>
                 </div>
               </div>
             ))}
@@ -424,140 +413,63 @@ export default function App() {
           <div className="animate-fade" style={{ textAlign: 'center' }}>
             <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px', textAlign: 'left' }}>AJUSTES</h2>
             <div className="card" style={{ padding: '48px 32px' }}>
-               <div style={{ width: '100px', height: '100px', background: 'var(--primary-dim)', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '2px solid var(--primary-light)' }}>
-                  <Shield size={50} style={{ color: 'var(--primary-light)' }} />
-               </div>
-               <h3 style={{ fontWeight: 900, fontSize: '1.2rem', marginBottom: '4px' }}>{user.identifier}</h3>
-               <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '32px' }}>
-                 {user.role === 'admin' ? 'SISTEMA ADMINISTRADOR' : 'USUARIO VERIFICADO'}
-               </p>
-               
-               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="card" style={{ margin: 0, padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-main)' }}>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-                        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Efectos de Sonido</span>
-                     </div>
-                     <input type="checkbox" checked={soundEnabled} onChange={() => setSoundEnabled(!soundEnabled)} />
-                  </div>
-
-                  <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444', height: '56px', fontWeight: 900, fontSize: '0.9rem', marginTop: '12px' }}>
-                    <LogOut size={20} /> CERRAR SESIÓN SEGURA
-                  </button>
-               </div>
+               <Shield size={60} style={{ color: 'var(--primary-light)', margin: '0 auto 24px' }} />
+               <h3 style={{ fontWeight: 900 }}>{user.identifier}</h3>
+               <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase', marginBottom: '32px' }}>{user.role === 'admin' ? 'ADMINISTRADOR' : 'USUARIO'}</p>
+               <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444' }}>
+                 <LogOut size={20} /> CERRAR SESIÓN
+               </button>
             </div>
-            
-            <p style={{ marginTop: '32px', fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '1px' }}>
-              ERGOMEDI-TRACKER v2.0.0 • POWERED BY GOOGLE STACK
-            </p>
           </div>
         )}
       </main>
 
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'flex-end' }}>
-          <div className="animate-fade" style={{ background: 'var(--bg-modal)', width: '100%', borderTopLeftRadius: '40px', borderTopRightRadius: '40px', padding: '32px', maxHeight: '92vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                 <div style={{ background: 'var(--primary-dim)', padding: '8px', borderRadius: '12px' }}>
-                    <Pill size={24} style={{ color: 'var(--primary-light)' }} />
-                 </div>
-                 <h3 style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>{editingId ? 'EDITAR PLAN' : 'CONFIGURAR NUEVO PLAN'}</h3>
-              </div>
-              <div onClick={closeModal} style={{ cursor: 'pointer', background: 'var(--bg-main)', padding: '8px', borderRadius: '50%' }}>
-                <X size={24} />
-              </div>
+          <div className="animate-fade" style={{ background: 'var(--bg-modal)', width: '100%', borderTopLeftRadius: '40px', borderTopRightRadius: '40px', padding: '32px', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
+              <h3 style={{ fontWeight: 900 }}>{editingId ? 'EDITAR PLAN' : 'NUEVO PLAN'}</h3>
+              <X onClick={closeModal} size={24} />
             </div>
             <form onSubmit={handleSaveMed}>
               <div className="input-group">
-                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)', letterSpacing: '1px' }}>NOMBRE DEL MEDICAMENTO</label>
-                <input type="text" className="input-field" placeholder="Ej: Amoxicilina 500mg" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ background: 'var(--bg-main)' }} />
+                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>MEDICAMENTO</label>
+                <input type="text" className="input-field" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ background: 'var(--bg-main)' }} />
               </div>
-              
               <div className="input-group">
-                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)', letterSpacing: '1px' }}>RECETA MÉDICA / INDICACIONES</label>
+                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>RECETA MÉDICA (DRIVE)</label>
                 <div style={{ position: 'relative', height: '140px', background: 'var(--bg-main)', borderRadius: '20px', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                   {formData.prescriptionUrl ? (
-                     <img src={formData.prescriptionUrl.replace('open?', 'uc?export=view&')} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                   ) : (
-                     <div style={{ textAlign: 'center' }}>
-                        <ImageIcon size={32} style={{ color: 'var(--text-muted)', marginBottom: '8px', opacity: 0.5 }} />
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>SUBIR IMAGEN DE LA RECETA</p>
-                     </div>
-                   )}
+                   {formData.prescriptionUrl ? <img src={formData.prescriptionUrl.replace('open?', 'uc?export=view&')} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={32} style={{ color: 'var(--text-muted)' }} />}
                    <input type="file" accept="image/*" onChange={handleFileUpload} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
                 </div>
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div className="input-group">
-                   <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DOSIS</label>
-                   <input type="text" className="input-field" placeholder="1 tableta" value={formData.dosage} onChange={e => setFormData({...formData, dosage: e.target.value})} style={{ background: 'var(--bg-main)' }} />
-                </div>
-                <div className="input-group">
-                   <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DURACIÓN (DÍAS)</label>
-                   <input type="number" className="input-field" value={formData.durationDays} onChange={e => setFormData({...formData, durationDays: parseInt(e.target.value) || 1})} style={{ background: 'var(--bg-main)' }} />
-                </div>
+                <div className="input-group"><label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DOSIS</label><input type="text" className="input-field" value={formData.dosage} onChange={e => setFormData({...formData, dosage: e.target.value})} style={{ background: 'var(--bg-main)' }} /></div>
+                <div className="input-group"><label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DURACIÓN (DÍAS)</label><input type="number" className="input-field" value={formData.durationDays} onChange={e => setFormData({...formData, durationDays: parseInt(e.target.value) || 1})} style={{ background: 'var(--bg-main)' }} /></div>
               </div>
-
-              <div className="input-group" style={{ background: 'var(--bg-main)', padding: '20px', borderRadius: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)', letterSpacing: '1px' }}>FRECUENCIA DIARIA</label>
-                  <span style={{ background: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '10px', fontWeight: 900, fontSize: '0.9rem' }}>{formData.timesPerDay}</span>
-                </div>
-                <input type="range" min="1" max="8" style={{ width: '100%', accentColor: 'var(--primary-light)' }} value={formData.timesPerDay} onChange={e => handleFrequencyChange(e.target.value)} />
-                <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center', fontWeight: 700 }}>Desliza para ajustar cuántas veces al día debes tomarlo</p>
+              <div className="input-group">
+                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>FRECUENCIA DIARIA: {formData.timesPerDay}</label>
+                <input type="range" min="1" max="8" style={{ width: '100%' }} value={formData.timesPerDay} onChange={e => handleFrequencyChange(e.target.value)} />
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
                 {formData.times.map((t, i) => (
-                  <div key={i} style={{ position: 'relative' }}>
-                    <Clock size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-light)', zIndex: 1 }} />
-                    <input type="time" className="input-field" value={t} onChange={e => {
-                      const nt = [...formData.times]; nt[i] = e.target.value; setFormData({...formData, times: nt});
-                    }} style={{ paddingLeft: '36px', background: 'var(--bg-main)', fontSize: '0.85rem' }} />
-                  </div>
+                  <input key={i} type="time" className="input-field" value={t} onChange={e => {
+                    const nt = [...formData.times]; nt[i] = e.target.value; setFormData({...formData, times: nt});
+                  }} style={{ background: 'var(--bg-main)' }} />
                 ))}
               </div>
-
-              <button type="submit" className="btn-primary" disabled={saving} style={{ height: '60px', fontSize: '1rem', fontWeight: 900 }}>
-                {saving ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><RefreshCw className="animate-spin" /> SINCRONIZANDO...</span>
-                ) : (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Save size={20} /> GUARDAR EN ERGOMEDI CLOUD</span>
-                )}
-              </button>
+              <button type="submit" className="btn-primary" style={{ height: '60px', fontWeight: 900 }}>GUARDAR EN GOOGLE SHEETS</button>
             </form>
           </div>
         </div>
       )}
 
-      <div className="fab" onClick={() => setShowModal(true)} style={{ width: '64px', height: '64px', borderRadius: '22px', boxShadow: '0 8px 24px rgba(13, 115, 119, 0.4)' }}>
-        <Plus size={32} />
-      </div>
+      <div className="fab" onClick={() => setShowModal(true)} style={{ width: '64px', height: '64px' }}><Plus size={32} /></div>
 
-      <nav className="nav-bottom" style={{ height: '85px', paddingBottom: '20px' }}>
-        <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-          <div style={{ position: 'relative' }}>
-            <Activity size={24} />
-            {activeTab === 'dashboard' && <div style={{ position: 'absolute', bottom: '-8px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', background: 'var(--primary-light)', borderRadius: '50%' }}></div>}
-          </div>
-          <span>Panel</span>
-        </div>
-        <div className={`nav-item ${activeTab === 'historial' ? 'active' : ''}`} onClick={() => setActiveTab('historial')}>
-          <div style={{ position: 'relative' }}>
-            <History size={24} />
-            {activeTab === 'historial' && <div style={{ position: 'absolute', bottom: '-8px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', background: 'var(--primary-light)', borderRadius: '50%' }}></div>}
-          </div>
-          <span>Log</span>
-        </div>
-        <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-          <div style={{ position: 'relative' }}>
-            <Settings size={24} />
-            {activeTab === 'profile' && <div style={{ position: 'absolute', bottom: '-8px', left: '50%', transform: 'translateX(-50%)', width: '4px', height: '4px', background: 'var(--primary-light)', borderRadius: '50%' }}></div>}
-          </div>
-          <span>Ajustes</span>
-        </div>
+      <nav className="nav-bottom">
+        <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}><Activity size={24} /><span>Dashboard</span></div>
+        <div className={`nav-item ${activeTab === 'historial' ? 'active' : ''}`} onClick={() => setActiveTab('historial')}><History size={24} /><span>Historial</span></div>
+        <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}><Settings size={24} /><span>Ajustes</span></div>
       </nav>
     </div>
   );
