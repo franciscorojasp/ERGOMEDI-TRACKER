@@ -153,6 +153,25 @@ export const api = {
       });
     }
 
-    return { ...med, times };
+    return { ...med, times, lastResetDate: normalizeDate(med.lastResetDate) };
   }
 };
+
+// Converts any date representation to local "YYYY-MM-DD" string.
+// Guards against Sheets returning ISO UTC strings like "2026-05-05T04:00:00.000Z"
+// which would never match localToday() = "2026-05-05".
+function normalizeDate(val) {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    // Already plain date string "2026-05-05" — return as-is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    // ISO string — parse and extract local date
+    const d = new Date(val);
+    if (!isNaN(d)) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+  }
+  if (val instanceof Date) {
+    return `${val.getFullYear()}-${String(val.getMonth()+1).padStart(2,'0')}-${String(val.getDate()).padStart(2,'0')}`;
+  }
+  return String(val).substring(0, 10);

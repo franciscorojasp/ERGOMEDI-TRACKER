@@ -130,11 +130,32 @@ function doGet(e) {
       const sheet = ss.getSheetByName(MEDS_SHEET_NAME);
       const data = sheet.getDataRange().getValues();
       const headers = data[0];
+
+      // Helper: Google Sheets auto-converts "2026-05-05" strings to Date objects.
+      // We must convert them back to YYYY-MM-DD strings for correct client comparison.
+      const dateFields  = ['lastResetDate', 'startDate'];
+      const intFields   = ['dosesTaken', 'takenTodayCount', 'durationDays', 'timesPerDay'];
+      const toYMD = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
       const rows = data.slice(1)
         .filter(row => row[1] == userId)
         .map(row => {
           let obj = {};
-          headers.forEach((header, i) => obj[header] = row[i]);
+          headers.forEach((header, i) => {
+            const val = row[i];
+            if (dateFields.includes(header) && val instanceof Date) {
+              obj[header] = toYMD(val);          // "2026-05-05T04:00:00Z" → "2026-05-05"
+            } else if (intFields.includes(header)) {
+              obj[header] = parseInt(val) || 0;
+            } else {
+              obj[header] = val;
+            }
+          });
           if (obj.times) {
             try { obj.times = JSON.parse(obj.times); } catch(e) { obj.times = []; }
           }
