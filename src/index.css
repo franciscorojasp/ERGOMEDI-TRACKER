@@ -327,19 +327,18 @@ body::before {
   background: var(--bg-modal);
   width: 100%;
   max-width: 480px;
-  /* Key: use dvh for true mobile viewport, fallback to vh */
   max-height: calc(100dvh - 32px);
   max-height: calc(100vh - 32px);
   display: flex;
-  flex-direction: column; /* Stack header + scrollable body */
+  flex-direction: column;
   border-radius: 20px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  overflow: hidden; /* clip children to rounded corners */
+  overflow: hidden;
 }
 
 .modal-header {
-  flex-shrink: 0; /* Never shrinks */
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -349,35 +348,40 @@ body::before {
 }
 
 .modal-body {
-  flex: 1 1 auto; /* Takes all available space */
-  overflow-y: auto; /* Scrolls only this area */
+  flex: 1 1 auto;
+  overflow-y: auto;
   padding: 16px 20px 20px;
   overscroll-behavior: contain;
 }
 
-/* Custom scrollbar */
 .modal-body::-webkit-scrollbar { width: 4px; }
 .modal-body::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
 
+/* 2 columns on screens wider than 600px */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
-/* Stack on very small screens */
-@media (max-width: 400px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+/* Mobile: single column, full-width bottom sheet */
+@media screen and (max-width: 600px) {
   .modal-overlay {
-    padding: 0;
-    align-items: flex-end;
+    padding: 0 !important;
+    align-items: flex-end !important;
   }
   .modal-box {
-    border-radius: 20px 20px 0 0;
-    max-height: 95dvh;
-    max-height: 95vh;
+    max-width: 100vw !important;
+    width: 100vw !important;
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 92dvh !important;
+    max-height: 92vh !important;
+  }
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .modal-body {
+    padding: 14px 16px 16px !important;
   }
 }
 
