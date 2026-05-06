@@ -175,3 +175,4 @@ function normalizeDate(val) {
     return `${val.getFullYear()}-${String(val.getMonth()+1).padStart(2,'0')}-${String(val.getDate()).padStart(2,'0')}`;
   }
   return String(val).substring(0, 10);
+}

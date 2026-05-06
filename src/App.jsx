@@ -375,7 +375,7 @@ export default function App() {
   );
 
   if (!user) return (
-    <div style={{ height: '100svh', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: '20px' }}>
+    <div style={{ minHeight: '100svh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: '20px' }}>
       <div className="card" style={{ maxWidth: '420px', width: '100%', textAlign: 'center', padding: '36px 28px' }}>
         <div className="logo" style={{ justifyContent: 'center', marginBottom: '40px', fontSize: '2rem' }}>
           <Pill size={44} style={{ color: 'var(--primary-light)' }} /> 
