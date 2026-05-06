@@ -273,8 +273,8 @@ export default function App() {
   );
 
   if (!user) return (
-    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', background: 'var(--bg-main)' }}>
-      <div className="card" style={{ maxWidth: '440px', width: '100%', textAlign: 'center', padding: '48px 40px' }}>
+    <div style={{ height: '100svh', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: '20px' }}>
+      <div className="card" style={{ maxWidth: '420px', width: '100%', textAlign: 'center', padding: '36px 28px' }}>
         <div className="logo" style={{ justifyContent: 'center', marginBottom: '40px', fontSize: '2rem' }}>
           <Pill size={44} style={{ color: 'var(--primary-light)' }} /> 
           <span style={{ fontWeight: 900, letterSpacing: '-1px' }}>
@@ -327,7 +327,7 @@ export default function App() {
   );
 
   return (
-    <div className="animate-fade">
+    <div className="animate-fade" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <audio ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
 
       <header className="header">
@@ -359,7 +359,7 @@ export default function App() {
                </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+            <div className="summary-grid">
                <div className="card" style={{ margin: 0, padding: '24px', textAlign: 'center', background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--primary-dim) 100%)' }}>
                   <Activity size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
                   <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Progreso Plan</p>
@@ -380,7 +380,8 @@ export default function App() {
               <FileText size={20} /> DESCARGAR REPORTE MAESTRO
             </button>
 
-            {meds.map(med => {
+            <div className="meds-grid">
+              {meds.map(med => {
               const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
               const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
               
@@ -471,6 +472,7 @@ export default function App() {
                 </div>
               );
             })}
+            </div>
           </>
         ) : activeTab === 'historial' ? (
           <div className="animate-fade">
@@ -554,41 +556,46 @@ export default function App() {
       </main>
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', alignItems: 'flex-end' }}>
-          <div className="animate-fade" style={{ background: 'var(--bg-modal)', width: '100%', borderTopLeftRadius: '40px', borderTopRightRadius: '40px', padding: '32px', maxHeight: '92vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
-              <h3 style={{ fontWeight: 900 }}>{editingId ? 'EDITAR PLAN' : 'NUEVO PLAN'}</h3>
-              <X onClick={closeModal} size={24} />
+        <div className="modal-overlay">
+          <div className="modal-box animate-fade">
+            <div className="modal-header">
+              <h3 style={{ fontWeight: 900, fontSize: '1rem' }}>{editingId ? 'EDITAR PLAN' : 'NUEVO PLAN'}</h3>
+              <X onClick={closeModal} size={22} style={{ cursor: 'pointer' }} />
             </div>
-            <form onSubmit={handleSaveMed}>
-              <div className="input-group">
-                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>MEDICAMENTO</label>
-                <input type="text" className="input-field" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ background: 'var(--bg-main)' }} />
-              </div>
-              <div className="input-group">
-                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>RECETA MÉDICA (DRIVE)</label>
-                <div style={{ position: 'relative', height: '140px', background: 'var(--bg-main)', borderRadius: '20px', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                   {formData.prescriptionUrl ? <img src={getDriveImageUrl(formData.prescriptionUrl)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={32} style={{ color: 'var(--text-muted)' }} />}
-                   <input type="file" accept="image/*" onChange={handleFileUpload} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+            <div className="modal-body">
+              <form onSubmit={handleSaveMed} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>MEDICAMENTO</label>
+                  <input type="text" className="input-field" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
                 </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div className="input-group"><label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DOSIS</label><input type="text" className="input-field" value={formData.dosage} onChange={e => setFormData({...formData, dosage: e.target.value})} style={{ background: 'var(--bg-main)' }} /></div>
-                <div className="input-group"><label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>DURACIÓN (DÍAS)</label><input type="number" className="input-field" value={formData.durationDays} onChange={e => setFormData({...formData, durationDays: parseInt(e.target.value) || 1})} style={{ background: 'var(--bg-main)' }} /></div>
-              </div>
-              <div className="input-group">
-                <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>FRECUENCIA DIARIA: {formData.timesPerDay}</label>
-                <input type="range" min="1" max="8" style={{ width: '100%' }} value={formData.timesPerDay} onChange={e => handleFrequencyChange(e.target.value)} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
-                {formData.times.map((t, i) => (
-                  <input key={i} type="time" className="input-field" value={t} onChange={e => {
-                    const nt = [...formData.times]; nt[i] = e.target.value; setFormData({...formData, times: nt});
-                  }} style={{ background: 'var(--bg-main)' }} />
-                ))}
-              </div>
-              <button type="submit" className="btn-primary" style={{ height: '60px', fontWeight: 900 }}>GUARDAR EN GOOGLE SHEETS</button>
-            </form>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>RECETA MÉDICA (DRIVE)</label>
+                  <div style={{ position: 'relative', height: '70px', background: 'var(--bg-main)', borderRadius: '12px', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', gap: '8px' }}>
+                    {formData.prescriptionUrl 
+                      ? <img src={getDriveImageUrl(formData.prescriptionUrl)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <><ImageIcon size={18} style={{ color: 'var(--text-muted)' }} /><span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Toca para subir foto</span></>
+                    }
+                    <input type="file" accept="image/*" onChange={handleFileUpload} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <div className="input-group" style={{ marginBottom: 0 }}><label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>DOSIS</label><input type="text" className="input-field" value={formData.dosage} onChange={e => setFormData({...formData, dosage: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} /></div>
+                  <div className="input-group" style={{ marginBottom: 0 }}><label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>DURACIÓN (DÍAS)</label><input type="number" className="input-field" value={formData.durationDays} onChange={e => setFormData({...formData, durationDays: parseInt(e.target.value) || 1})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} /></div>
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>FRECUENCIA DIARIA: {formData.timesPerDay}</label>
+                  <input type="range" min="1" max="8" style={{ width: '100%' }} value={formData.timesPerDay} onChange={e => handleFrequencyChange(e.target.value)} />
+                </div>
+                <div className="form-grid" style={{ gridTemplateColumns: formData.timesPerDay > 2 ? 'repeat(auto-fit, minmax(90px, 1fr))' : '1fr 1fr' }}>
+                  {formData.times.map((t, i) => (
+                    <input key={i} type="time" className="input-field" value={t} onChange={e => {
+                      const nt = [...formData.times]; nt[i] = e.target.value; setFormData({...formData, times: nt});
+                    }} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
+                  ))}
+                </div>
+                <button type="submit" className="btn-primary" style={{ height: '48px', fontWeight: 900, marginTop: '4px', fontSize: '0.85rem' }}>GUARDAR EN GOOGLE SHEETS</button>
+              </form>
+            </div>
           </div>
         </div>
       )}
