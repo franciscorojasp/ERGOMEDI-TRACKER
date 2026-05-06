@@ -341,13 +341,15 @@ export default function App() {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // Crop to square and resize to 64×64 px for PDF
-        const size   = Math.min(img.naturalWidth, img.naturalHeight);
-        const sx     = Math.round((img.naturalWidth  - size) / 2);
-        const sy     = Math.round((img.naturalHeight - size) / 2);
+        // The original image contains text at the bottom.
+        // We crop ONLY the top square part (width x width)
+        const size = img.naturalWidth;
         const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = 96;
-        canvas.getContext('2d').drawImage(img, sx, sy, size, size, 0, 0, 96, 96);
+        // We resize to a standard 128x128 to keep PDF size small
+        canvas.width = 128;
+        canvas.height = 128;
+        // drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
+        canvas.getContext('2d').drawImage(img, 0, 0, size, size, 0, 0, 128, 128);
         resolve(canvas.toDataURL('image/png'));
       };
       img.onerror = () => resolve(null);

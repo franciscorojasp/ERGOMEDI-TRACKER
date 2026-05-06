@@ -322,12 +322,19 @@ function checkAndSendAlerts() {
     var localDate = new Date(localMs);
     var nowHHMM   = Utilities.formatDate(localDate, 'UTC', 'HH:mm');
 
+    var processedMeds = {}; // Deduplicate meds in memory
+
     for (var med = 1; med < medsData.length; med++) {
       if (String(medsData[med][1]) !== userId) continue;
 
       var medId   = String(medsData[med][0]);
-      var medName = medsData[med][2];
-      var dosage  = medsData[med][3];
+      var medName = String(medsData[med][2]);
+      var dosage  = String(medsData[med][3]);
+      
+      var medKey = medName.trim().toLowerCase() + '|' + dosage.trim().toLowerCase();
+      if (processedMeds[medKey]) continue; // Skip duplicates
+      processedMeds[medKey] = true;
+
       var times   = [];
       try { times = JSON.parse(medsData[med][4] || '[]'); } catch(e) {}
 
@@ -343,7 +350,8 @@ function checkAndSendAlerts() {
           var alert = alerts[a];
           if (alert.triggerTime !== nowHHMM) continue;
 
-          var dedupeKey = userId + '_' + medId + '_' + scheduledTime + '_' + alert.offset;
+          // Clave unica de alerta (ignora medId real para evitar duplicados si hay rows clonadas)
+          var dedupeKey = userId + '_' + medKey + '_' + scheduledTime + '_' + alert.offset;
           if (sentAlerts[dedupeKey]) continue;
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
