@@ -383,7 +383,10 @@ export default function App() {
             {meds.map(med => {
               const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
               const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
-              const isDoneToday = (med.lastResetDate === new Date().toISOString().split('T')[0] ? (med.takenTodayCount || 0) : 0) >= (med.timesPerDay || 1);
+              
+              const today = new Date().toISOString().split('T')[0];
+              const takenToday = med.lastResetDate === today ? (med.takenTodayCount || 0) : 0;
+              const isDoneToday = takenToday >= (med.timesPerDay || 1);
 
               return (
                 <div key={med.id} className="card animate-fade" style={{ padding: '24px' }}>
@@ -399,7 +402,7 @@ export default function App() {
                        <Share2 size={18} onClick={() => shareToWhatsApp(med.name, progress)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
                        <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
                        <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
-                     <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
+                       <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
                     </div>
                   </div>
                   
@@ -417,20 +420,53 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Indicador visual de tomas diarias */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    {Array.from({ length: med.timesPerDay || 1 }).map((_, i) => (
+                      <div 
+                        key={i} 
+                        style={{ 
+                          width: '12px', 
+                          height: '12px', 
+                          borderRadius: '50%', 
+                          background: i < takenToday ? 'var(--primary-light)' : 'var(--bg-main)',
+                          border: i < takenToday ? 'none' : '2px solid var(--border)',
+                          boxShadow: i < takenToday ? '0 0 10px var(--primary-light)' : 'none'
+                        }} 
+                      />
+                    ))}
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, marginLeft: '8px', textTransform: 'uppercase' }}>
+                      {takenToday} de {med.timesPerDay} hoy
+                    </span>
+                  </div>
+
                   <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
                     <div className="progress-bar" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)' }}>
                     <span style={{ color: 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
-                    <span>{med.dosesTaken} / {totalNeeded} TOMAS</span>
+                    <span>{med.dosesTaken} / {totalNeeded} TOMAS TOTALES</span>
                   </div>
                   <button 
                     disabled={isDoneToday} 
                     onClick={() => markAsTaken(med)} 
                     className="btn-primary" 
-                    style={{ marginTop: '20px', height: '52px', background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', color: isDoneToday ? 'var(--text-muted)' : 'white', border: isDoneToday ? '1px solid var(--border)' : 'none' }}
+                    style={{ 
+                      marginTop: '20px', 
+                      height: '52px', 
+                      background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', 
+                      color: isDoneToday ? 'var(--text-muted)' : 'white', 
+                      border: isDoneToday ? '1px solid var(--border)' : 'none',
+                      opacity: isDoneToday ? 0.7 : 1
+                    }}
                   >
-                    {isDoneToday ? 'META DIARIA CUMPLIDA' : `CONFIRMAR TOMA (${(med.lastResetDate === new Date().toISOString().split('T')[0] ? (med.takenTodayCount || 0) : 0) + 1}/${med.timesPerDay})`}
+                    {isDoneToday ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <CheckCircle2 size={18} /> TOMAS COMPLETADAS
+                      </div>
+                    ) : (
+                      `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
+                    )}
                   </button>
                 </div>
               );
