@@ -354,80 +354,70 @@ export default function App() {
       img.src = '/logo.png?v=' + Date.now();
     });
 
-    // ── HEADER: white background, teal top border ─────────────────
-    const TEAL       = [13, 115, 119];
-    const DARK_TEAL  = [9, 80, 84];
-    const HEADER_H   = 58; // total header height before dark band
+    // ── COLORS ────────────────────────────────────────────────────
+    const TEAL       = [13, 115, 119]; // Main header bg and table headers
+    const DARK_TEAL  = [9, 80, 84];    // Sub-header band
+    const WHITE      = [255, 255, 255];
+    
+    const HEADER_H   = 55; // main header height
     const LOGO_X     = 10;
     const LOGO_Y     = 8;
-    const LOGO_SZ    = 34; // logo square size in mm
-    const RIGHT_X    = LOGO_X + LOGO_SZ + 8; // right column start
+    const LOGO_SZ    = 34; // logo size
 
-    // White header area
-    docPdf.setFillColor(255, 255, 255);
-    docPdf.rect(0, 0, pageW, HEADER_H, 'F');
-
-    // Teal top accent bar (3 mm)
+    // ── MAIN HEADER BAND ──────────────────────────────────────────
     docPdf.setFillColor(...TEAL);
-    docPdf.rect(0, 0, pageW, 3, 'F');
+    docPdf.rect(0, 0, pageW, HEADER_H, 'F');
 
     // Logo image
     if (logoDataUrl) {
-      // Rounded-corner clip approximation: draw with a slight border
-      docPdf.setFillColor(...DARK_TEAL);
-      docPdf.roundedRect(LOGO_X - 1, LOGO_Y - 1, LOGO_SZ + 2, LOGO_SZ + 2, 3, 3, 'F');
       docPdf.addImage(logoDataUrl, 'PNG', LOGO_X, LOGO_Y, LOGO_SZ, LOGO_SZ);
     }
 
     // "ERGOMEDI-TRACKER" label below logo
-    docPdf.setFontSize(10);
-    docPdf.setTextColor(...TEAL);
+    docPdf.setFontSize(14);
+    docPdf.setTextColor(...WHITE);
     docPdf.setFont(undefined, 'bold');
-    docPdf.text('ERGOMEDI-TRACKER', LOGO_X, LOGO_Y + LOGO_SZ + 7);
+    docPdf.text('ERGOMEDI-TRACKER', LOGO_X, LOGO_Y + LOGO_SZ + 8);
 
     // ── RIGHT COLUMN: company info ────────────────────────────────
-    // Company name — large, teal, bold, right-aligned
-    docPdf.setFontSize(14);
-    docPdf.setTextColor(...TEAL);
+    // Company name
+    docPdf.setFontSize(11);
     docPdf.setFont(undefined, 'bold');
-    docPdf.text('ERGOEXPRESS, C.A.', pageW - 12, 11, { align: 'right' });
+    docPdf.text('ERGOEXPRESS, C.A.', pageW - 12, 14, { align: 'right' });
 
-    // RIF / address
+    // RIF / address / contact
     docPdf.setFontSize(7.5);
-    docPdf.setTextColor(80, 80, 80);
     docPdf.setFont(undefined, 'normal');
-    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', pageW - 12, 17, { align: 'right' });
-    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 22, { align: 'right' });
+    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', pageW - 12, 19, { align: 'right' });
+    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 24, { align: 'right' });
 
-    // Thin divider line within right column
-    docPdf.setDrawColor(200, 200, 200);
-    docPdf.line(RIGHT_X, 25, pageW - 12, 25);
-
-    // Patient & Doctor — right-aligned, below the divider
+    // Patient & Doctor
     const patientName = user?.patientName || '';
     const doctorName  = user?.doctorName  || '';
     docPdf.setFontSize(8);
-    docPdf.setTextColor(60, 60, 60);
     if (patientName) {
       docPdf.setFont(undefined, 'normal');
-      docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 32, {});
+      docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 36, {});
       docPdf.setFont(undefined, 'bold');
-      docPdf.text(patientName, pageW - 12, 32, { align: 'right' });
+      docPdf.text(patientName, pageW - 12, 36, { align: 'right' });
     }
     if (doctorName) {
       docPdf.setFont(undefined, 'normal');
-      docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 38, {});
+      docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 42, {});
       docPdf.setFont(undefined, 'bold');
-      docPdf.text(doctorName, pageW - 12, 38, { align: 'right' });
+      docPdf.text(doctorName, pageW - 12, 42, { align: 'right' });
     }
 
-    // ── DARK BAND: report title + date ────────────────────────────
+    // ── SUB-HEADER BAND: report title + date ──────────────────────
     const BAND_Y = HEADER_H;
+    const BAND_H = 10;
     docPdf.setFillColor(...DARK_TEAL);
-    docPdf.rect(0, BAND_Y, pageW, 10, 'F');
+    docPdf.rect(0, BAND_Y, pageW, BAND_H, 'F');
+    
     docPdf.setFontSize(8);
-    docPdf.setTextColor(200, 240, 240);
+    docPdf.setTextColor(...WHITE);
     docPdf.setFont(undefined, 'normal');
+
     docPdf.text(
       specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : 'REPORTE CONSOLIDADO DE PLANES',
       pageW / 2, BAND_Y + 6.5, { align: 'center' }
