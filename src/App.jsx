@@ -325,17 +325,13 @@ export default function App() {
   const exportPDF = async (specificMed = null) => {
     const docPdf = new jsPDF();
 
-    // Load logo for PDF embedding
+    // Load logo PNG for PDF embedding
     let logoDataUrl = null;
     try {
-      const resp = await fetch('/logo.svg');
-      const svgText = await resp.text();
-      const blob = new Blob([svgText], { type: 'image/svg+xml' });
-      logoDataUrl = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.readAsDataURL(blob);
-      });
+      const resp = await fetch('/logo.png');
+      const arrayBuf = await resp.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+      logoDataUrl = 'data:image/png;base64,' + base64;
     } catch (_) { /* logo optional */ }
 
     // Teal header bar
@@ -344,7 +340,7 @@ export default function App() {
 
     // Embed logo if loaded
     if (logoDataUrl) {
-      docPdf.addImage(logoDataUrl, 'SVG', 8, 6, 32, 32);
+      docPdf.addImage(logoDataUrl, 'PNG', 8, 6, 32, 32);
     }
 
     docPdf.setFontSize(22);
@@ -387,7 +383,7 @@ export default function App() {
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
-         <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ width: '96px', height: '96px', objectFit: 'contain', animation: 'pulse 1.5s ease-in-out infinite', filter: 'drop-shadow(0 0 20px rgba(15,224,224,0.7))' }} />
+         <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ width: '96px', height: '96px', objectFit: 'contain', animation: 'pulse 1.5s ease-in-out infinite', filter: 'drop-shadow(0 0 20px rgba(15,224,224,0.7))' }} />
          <h1 style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-1px' }}>
            <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
            <span style={{ fontSize: '1rem', opacity: 0.5, marginLeft: '6px' }}>TRACKER</span>
@@ -401,7 +397,7 @@ export default function App() {
     <div style={{ minHeight: '100svh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: '20px' }}>
       <div className="card" style={{ maxWidth: '420px', width: '100%', textAlign: 'center', padding: '36px 28px' }}>
         <div className="logo" style={{ justifyContent: 'center', marginBottom: '28px', flexDirection: 'column', gap: '12px' }}>
-          <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ width: '90px', height: '90px', objectFit: 'contain', filter: 'drop-shadow(0 0 16px rgba(15,224,224,0.6))' }} />
+          <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ width: '90px', height: '90px', objectFit: 'contain', filter: 'drop-shadow(0 0 16px rgba(15,224,224,0.6))' }} />
           <span style={{ fontWeight: 900, letterSpacing: '-1px', fontSize: '1.5rem' }}>
             <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
             <span style={{ fontSize: '0.9rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
@@ -458,7 +454,7 @@ export default function App() {
 
       <header className="header">
         <div className="logo" style={{ fontSize: '1.4rem', gap: '10px' }}>
-          <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ height: '38px', width: '38px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
+          <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ height: '38px', width: '38px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
           <span style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>
             <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
             <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
