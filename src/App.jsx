@@ -66,6 +66,12 @@ export default function App() {
     else setLoading(false);
   }, [user]);
 
+  // Local-timezone date helper — avoids UTC offset bugs (e.g. UTC-4 users after 8pm)
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   // PWA Install prompt capture
   useEffect(() => {
     // Don't show if already installed as standalone app
@@ -208,7 +214,7 @@ export default function App() {
 
   const markAsTaken = async (med) => {
     if (!user) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localToday(); // local date, not UTC
     const timestamp = new Date().toISOString();
     
     // Optimistic Update
@@ -407,7 +413,7 @@ export default function App() {
                   <Clock size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
                   <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Tomas Hoy</p>
                   <p style={{ fontSize: '2rem', fontWeight: 900 }}>
-                    {meds.reduce((acc, m) => acc + (m.lastResetDate === new Date().toISOString().split('T')[0] ? (m.takenTodayCount || 0) : 0), 0)}
+                    {meds.reduce((acc, m) => acc + (m.lastResetDate === localToday() ? (m.takenTodayCount || 0) : 0), 0)}
                   </p>
                </div>
             </div>
@@ -421,7 +427,7 @@ export default function App() {
               const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
               const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
               
-              const today = new Date().toISOString().split('T')[0];
+              const today = localToday(); // local date, not UTC
               const takenToday = med.lastResetDate === today ? (med.takenTodayCount || 0) : 0;
               const isDoneToday = takenToday >= (med.timesPerDay || 1);
 
