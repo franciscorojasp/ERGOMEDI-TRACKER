@@ -325,14 +325,22 @@ export default function App() {
   const exportPDF = async (specificMed = null) => {
     const docPdf = new jsPDF();
 
-    // Load logo PNG for PDF embedding
-    let logoDataUrl = null;
-    try {
-      const resp = await fetch('/logo.png');
-      const arrayBuf = await resp.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
-      logoDataUrl = 'data:image/png;base64,' + base64;
-    } catch (_) { /* logo optional */ }
+    // Load logo PNG for PDF embedding using canvas (reliable for large files)
+    const logoDataUrl = await new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const MAX = 128;
+        const ratio = Math.min(MAX / img.naturalWidth, MAX / img.naturalHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.naturalWidth  * ratio);
+        canvas.height = Math.round(img.naturalHeight * ratio);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(null);
+      img.src = '/logo.png?v=' + Date.now();
+    });
 
     // Teal header bar
     docPdf.setFillColor(13, 115, 119);
