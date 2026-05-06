@@ -454,6 +454,30 @@ export default function App() {
       styles: { fontSize: 8.5, cellPadding: 5 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
       columnStyles: { 4: { halign: 'center', fontStyle: 'bold' } },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const textContent = data.cell.text[0] || '0%';
+          const percent = Math.min(100, Math.max(0, parseInt(textContent.replace('%', ''), 10) || 0));
+          
+          const { x, y, width, height } = data.cell;
+          
+          // Configuracion de la barra
+          const barWidth = width - 12; // Dejar margen a los lados
+          const barHeight = 3; 
+          const barX = x + 6;
+          const barY = y + height - 6; // Colocar en la parte inferior de la celda
+          
+          // Dibujar fondo de la barra (Gris claro)
+          docPdf.setFillColor(220, 225, 225);
+          docPdf.rect(barX, barY, barWidth, barHeight, 'F');
+          
+          // Dibujar el progreso de la barra (Teal oscuro)
+          if (percent > 0) {
+            docPdf.setFillColor(9, 130, 135); // Un teal un poco más vibrante para la barra
+            docPdf.rect(barX, barY, barWidth * (percent / 100), barHeight, 'F');
+          }
+        }
+      }
     });
 
     // ── FOOTER ────────────────────────────────────────────────────
