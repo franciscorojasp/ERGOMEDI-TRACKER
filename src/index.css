@@ -308,7 +308,15 @@ body::before {
   transition: width 0.5s ease;
 }
 
-/* Modal System */
+/* ─── MODAL SYSTEM: Universal, device-agnostic responsive design ─── */
+/*
+ * Uses CSS fluid techniques instead of device-specific breakpoints:
+ * - min()        → naturally constrains width without overflow
+ * - clamp()      → smooth transitions between min and max values
+ * - auto-fit     → grid collapses columns when space is insufficient
+ * Works on: Windows, Linux, macOS, Android, iOS, and all browsers.
+ */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -319,19 +327,24 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  /* Fluid padding: 0 on tiny screens, up to 24px on large screens */
+  padding: clamp(0px, 3vw, 24px);
   box-sizing: border-box;
 }
 
 .modal-box {
   background: var(--bg-modal);
-  width: 100%;
-  max-width: 480px;
-  max-height: calc(100dvh - 32px);
-  max-height: calc(100vh - 32px);
+  /* 
+   * min(480px, 100%) = never exceed 480px, never exceed the viewport.
+   * No fixed breakpoint needed. Works at any screen width.
+   */
+  width: min(480px, 100%);
+  /* Max height: 92% of the actual visible viewport (svh = small viewport height) */
+  max-height: min(92svh, 92vh);
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
+  /* Fluid border-radius: rounded on large screens, flatter on tiny screens */
+  border-radius: clamp(12px, 2.5vw, 20px);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -342,7 +355,7 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-modal);
 }
@@ -350,39 +363,24 @@ body::before {
 .modal-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 16px 20px 20px;
+  /* Fluid padding: tighter on mobile, more spacious on desktop */
+  padding: clamp(12px, 3vw, 20px);
   overscroll-behavior: contain;
 }
 
 .modal-body::-webkit-scrollbar { width: 4px; }
 .modal-body::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
 
-/* 2 columns on screens wider than 600px */
+/* 
+ * Universal adaptive grid:
+ * auto-fit + minmax means columns will automatically collapse to 1
+ * when the available width is less than 2 × 160px = 320px.
+ * No media query needed — works on every device and OS.
+ */
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
-}
-
-/* Mobile: single column, full-width bottom sheet */
-@media screen and (max-width: 600px) {
-  .modal-overlay {
-    padding: 0 !important;
-    align-items: flex-end !important;
-  }
-  .modal-box {
-    max-width: 100vw !important;
-    width: 100vw !important;
-    border-radius: 20px 20px 0 0 !important;
-    max-height: 92dvh !important;
-    max-height: 92vh !important;
-  }
-  .form-grid {
-    grid-template-columns: 1fr !important;
-  }
-  .modal-body {
-    padding: 14px 16px 16px !important;
-  }
 }
 
 /* Animations */
