@@ -72,6 +72,23 @@ export default function App() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
+  // Auto-reset at local midnight (Venezuela UTC-4 and any timezone)
+  // Calculates exact ms until 00:00:00 local time, then refreshes data
+  useEffect(() => {
+    if (!user) return;
+    const scheduleReset = () => {
+      const now = new Date();
+      const msUntilMidnight =
+        new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).getTime() - now.getTime();
+      return setTimeout(() => {
+        fetchData(user.id); // Re-fetch: takenTodayCount won't match new date, so UI resets
+        scheduleReset();    // Reschedule for next midnight
+      }, msUntilMidnight);
+    };
+    const t = scheduleReset();
+    return () => clearTimeout(t);
+  }, [user]);
+
   // PWA Install prompt capture
   useEffect(() => {
     // Don't show if already installed as standalone app
@@ -577,15 +594,18 @@ export default function App() {
                       style={{ 
                         flex: 1,
                         height: '52px', 
-                        background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', 
-                        color: isDoneToday ? 'var(--text-muted)' : 'white', 
-                        border: isDoneToday ? '1px solid var(--border)' : 'none',
-                        opacity: isDoneToday ? 0.7 : 1
+                        background: isDoneToday
+                          ? 'linear-gradient(135deg, rgba(13,115,119,0.15), rgba(13,115,119,0.25))'
+                          : 'var(--primary)', 
+                        color: isDoneToday ? 'var(--primary-light)' : 'white', 
+                        border: isDoneToday ? '1.5px solid var(--primary)' : 'none',
+                        opacity: isDoneToday ? 0.9 : 1,
+                        cursor: isDoneToday ? 'default' : 'pointer',
                       }}
                     >
                       {isDoneToday ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                          <CheckCircle2 size={18} /> TOMAS COMPLETADAS
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 900 }}>
+                          <CheckCircle2 size={18} /> DOSIS COMPLETADAS
                         </div>
                       ) : (
                         `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
