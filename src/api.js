@@ -62,18 +62,33 @@ export const api = {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = reader.result.split(',')[1];
+        const dataUrl = reader.result; // full data URL for fallback
+        const base64 = dataUrl.split(',')[1];
         try {
-          // Upload remains as POST via Proxy because base64 is too large for GET
+          // Try the Vercel proxy first (only works when deployed on Vercel)
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8000);
           const res = await fetch('/api/proxy', {
             method: 'POST',
             body: JSON.stringify({ action: 'upload', userId, base64, mimeType: file.type, fileName: file.name }),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal
           });
+          clearTimeout(timeout);
           const data = await res.json();
-          resolve(data.url);
-        } catch (e) { reject(e); }
+          if (data.url) {
+            resolve(data.url);
+          } else {
+            // Proxy returned but no URL — store as data URL locally
+            resolve(dataUrl);
+          }
+        } catch (e) {
+          // Proxy not available (local dev, non-Vercel hosting) — use base64 data URL as fallback
+          console.warn('Proxy not available, using local data URL for prescription image.');
+          resolve(dataUrl);
+        }
       };
+      reader.onerror = () => reject(new Error('Error al leer el archivo.'));
       reader.readAsDataURL(file);
     });
   },

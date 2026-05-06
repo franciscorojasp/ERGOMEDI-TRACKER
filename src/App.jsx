@@ -162,19 +162,21 @@ export default function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    if (!loginIdentifier) return;
+    const trimmed = loginIdentifier.trim();
+    if (!trimmed) return;
     setLoading(true);
     setErrorMessage("");
     try {
-      const userData = await api.login(loginIdentifier);
-      if (userData.error) {
-        setErrorMessage(userData.error);
+      const userData = await api.login(trimmed);
+      if (!userData || userData.error) {
+        setErrorMessage(userData?.error || "No se pudo conectar con el servidor. Verifica tu conexión a internet.");
       } else {
         setUser(userData);
         localStorage.setItem('ergomedi_user', JSON.stringify(userData));
       }
     } catch (err) {
-      setErrorMessage("Error de servidor. Revisa tu conexión.");
+      console.error("Auth error:", err);
+      setErrorMessage("Error de conexión. Verifica tu acceso a internet e inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -490,21 +492,34 @@ export default function App() {
           </span>
         </div>
         <h2 style={{ marginBottom: '8px', fontWeight: 800, fontSize: '1.5rem' }}>
-          {authMode === 'login' ? 'Iniciar Sesión' : 'Registro de Usuario'}
+          {authMode === 'login' ? 'Acceder al Sistema' : 'Crear Nueva Cuenta'}
         </h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '32px' }}>
-          {authMode === 'login' ? 'Accede a tu panel ERGOMEDI-TRACKER' : 'Crea tu perfil en ERGOMEDI-TRACKER'}
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '8px' }}>
+          {authMode === 'login'
+            ? 'Ingresa tu email o teléfono registrado'
+            : 'Regístrate con tu email o número de teléfono'}
         </p>
-        
+        {/* Informational note for new users */}
+        <div style={{ background: 'var(--primary-dim)', border: '1px solid var(--primary-light)', borderRadius: '12px', padding: '10px 14px', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+          <Shield size={16} style={{ color: 'var(--primary-light)', flexShrink: 0, marginTop: '2px' }} />
+          <p style={{ fontSize: '0.75rem', color: 'var(--primary-light)', textAlign: 'left', margin: 0 }}>
+            {authMode === 'login'
+              ? 'No necesitas contraseña. Solo ingresa el email o teléfono con el que te registraste.'
+              : 'No necesitas cuenta de terceros. Solo tu email o número de WhatsApp. ¡Es gratis!'}
+          </p>
+        </div>
+
         <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ position: 'relative' }}>
              <input 
+               id="auth-identifier"
                type="text" 
-               placeholder="Email o Teléfono" 
+               placeholder={authMode === 'login' ? 'Email o Teléfono' : 'Ej: maria@gmail.com o +58424...'}
                className="input-field" 
                value={loginIdentifier} 
                onChange={e => setLoginIdentifier(e.target.value)} 
                required 
+               autoComplete="username"
                style={{ paddingLeft: '45px', background: 'var(--bg-main)' }}
              />
              {loginIdentifier.includes('@') ? 
@@ -512,14 +527,19 @@ export default function App() {
                <Phone size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-light)' }} />
              }
           </div>
-          <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', height: '54px', fontSize: '1rem' }}>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={!loginIdentifier.trim()}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', height: '54px', fontSize: '1rem', opacity: !loginIdentifier.trim() ? 0.6 : 1 }}
+          >
             {authMode === 'login' ? 'ENTRAR AL SISTEMA' : 'CREAR MI CUENTA'} <ArrowRight size={20} />
           </button>
         </form>
 
         <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
            <button 
-             onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+             onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setErrorMessage(''); setLoginIdentifier(''); }}
              style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', margin: '0 auto' }}
            >
              {authMode === 'login' ? <><UserPlus size={18} /> ¿NUEVO USUARIO? REGISTRARME</> : <><User size={18} /> ¿YA TIENES CUENTA? LOGUEARME</>}
@@ -533,6 +553,7 @@ export default function App() {
       </div>
     </div>
   );
+
 
   return (
     <div className="animate-fade" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
