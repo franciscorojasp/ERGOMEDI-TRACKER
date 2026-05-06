@@ -322,10 +322,11 @@ export default function App() {
   };
 
   // PDF Export
-  const exportPDF = async (specificMed = null) => {
+  // Builds the PDF and returns a Blob (used by both download and share)
+  const buildPDFBlob = async (specificMed = null) => {
     const docPdf = new jsPDF();
 
-    // Load logo PNG for PDF embedding using canvas (reliable for large files)
+    // Load logo PNG using canvas (reliable for large files)
     const logoDataUrl = await new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -342,21 +343,14 @@ export default function App() {
       img.src = '/logo.png?v=' + Date.now();
     });
 
-    // Teal header bar
     docPdf.setFillColor(13, 115, 119);
     docPdf.rect(0, 0, 210, 44, 'F');
-
-    // Embed logo if loaded
-    if (logoDataUrl) {
-      docPdf.addImage(logoDataUrl, 'PNG', 8, 6, 32, 32);
-    }
-
+    if (logoDataUrl) docPdf.addImage(logoDataUrl, 'PNG', 8, 6, 32, 32);
     docPdf.setFontSize(22);
     docPdf.setTextColor(255, 255, 255);
     docPdf.text("ERGOMEDI-TRACKER", logoDataUrl ? 48 : 105, 22, { align: logoDataUrl ? 'left' : 'center' });
     docPdf.setFontSize(9);
     docPdf.text("SISTEMA PROFESIONAL DE CONTROL MÉDICO", logoDataUrl ? 48 : 105, 31, { align: logoDataUrl ? 'left' : 'center' });
-
     docPdf.setTextColor(100);
     docPdf.setFontSize(12);
     docPdf.text(specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : "REPORTE CONSOLIDADO DEL PLAN", 15, 58);
@@ -376,7 +370,55 @@ export default function App() {
       headStyles: { fillColor: [13, 115, 119], fontWeight: 'bold' },
       styles: { fontSize: 9, cellPadding: 5 }
     });
-    docPdf.save(`ERGOMEDI_Reporte_${specificMed ? specificMed.name : 'Total'}_${Date.now()}.pdf`);
+    return docPdf.output('blob');
+  };
+
+  // Download PDF directly
+  const exportPDF = async (specificMed = null) => {
+    const blob = await buildPDFBlob(specificMed);
+    const fileName = `ERGOMEDI_Reporte_${specificMed ? specificMed.name : 'Total'}_${Date.now()}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  // Share PDF via WhatsApp using Web Share API (native) or deep link fallback
+  const shareReportWhatsApp = async (specificMed = null) => {
+    const fileName = `ERGOMEDI_Reporte_${specificMed ? specificMed.name : 'Total'}.pdf`;
+    const blob = await buildPDFBlob(specificMed);
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+
+    // Try Web Share API first (Android / iOS native share sheet → WhatsApp)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          title: 'Reporte ERGOMEDI-TRACKER',
+          text: `📋 Reporte de medicamentos - ${new Date().toLocaleDateString()}`,
+          files: [file],
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // user cancelled
+      }
+    }
+
+    // Fallback: download PDF + open WhatsApp with text summary
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    const lines = (specificMed ? [specificMed] : meds).map(m => {
+      const total = (m.durationDays || 1) * (m.timesPerDay || 1);
+      const pct   = Math.round(((m.dosesTaken || 0) / total) * 100);
+      return `• ${m.name} — ${m.dosesTaken}/${total} tomas (${pct}%)`;
+    });
+    const msg = encodeURIComponent(
+      `📋 *ERGOMEDI-TRACKER — Reporte ${new Date().toLocaleDateString()}*\n\n` +
+      lines.join('\n') +
+      `\n\n_(El PDF ya fue descargado en tu dispositivo)_`
+    );
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
   const openEditModal = (med) => {
@@ -506,9 +548,15 @@ export default function App() {
                </div>
             </div>
 
-            <button onClick={() => exportPDF()} className="btn-primary" style={{ marginBottom: '32px', height: '56px', fontSize: '0.9rem' }}>
-              <FileText size={20} /> DESCARGAR REPORTE MAESTRO
-            </button>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '32px', flexWrap: 'wrap' }}>
+              <button onClick={() => exportPDF()} className="btn-primary" style={{ flex: 1, minWidth: '200px', height: '56px', fontSize: '0.85rem' }}>
+                <FileText size={18} /> DESCARGAR REPORTE
+              </button>
+              <button onClick={() => shareReportWhatsApp()} className="btn-primary" style={{ flex: 1, minWidth: '200px', height: '56px', fontSize: '0.85rem', background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', border: 'none' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.119.554 4.122 1.523 5.867L.057 23.17a.75.75 0 0 0 .92.92l5.33-1.466A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.896 0-3.67-.52-5.187-1.425l-.372-.218-3.861 1.063 1.063-3.848-.235-.385A9.945 9.945 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+                ENVIAR POR WHATSAPP
+              </button>
+            </div>
 
             <div className="meds-grid">
               {meds.map(med => {
