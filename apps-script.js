@@ -141,15 +141,25 @@ function doGet(e) {
           return obj;
         });
 
-      // Deduplicate by id — keep entry with highest dosesTaken (most up-to-date)
-      const seen = {};
+      // Layer 1: Deduplicate by id — keep entry with highest dosesTaken
+      const seenById = {};
       rows.forEach(med => {
         const key = String(med.id);
-        if (!seen[key] || (med.dosesTaken || 0) >= (seen[key].dosesTaken || 0)) {
-          seen[key] = med;
+        if (!seenById[key] || (med.dosesTaken || 0) >= (seenById[key].dosesTaken || 0)) {
+          seenById[key] = med;
         }
       });
-      result = Object.values(seen);
+
+      // Layer 2: Deduplicate by name+dosage — catches rows with DIFFERENT ids that are the same plan
+      // (happens when optimistic temp-ids caused multiple appendRow calls in previous sessions)
+      const seenByName = {};
+      Object.values(seenById).forEach(med => {
+        const nameKey = String(med.name).trim().toLowerCase() + '|' + String(med.dosage).trim().toLowerCase();
+        if (!seenByName[nameKey] || (med.dosesTaken || 0) >= (seenByName[nameKey].dosesTaken || 0)) {
+          seenByName[nameKey] = med;
+        }
+      });
+      result = Object.values(seenByName);
     } else if (action === 'getHistory') {
       const sheet = ss.getSheetByName(HISTORY_SHEET_NAME);
       const data = sheet.getDataRange().getValues();
@@ -321,4 +331,48 @@ function jsonResponse(data, callback) {
   }
   return ContentService.createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Run this ONCE from the Apps Script editor to physically delete all duplicate
+ * medication rows from the Sheet, keeping the one with the highest dosesTaken.
+ * Menu: Run > cleanupDuplicates
+ */
+function cleanupDuplicates() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('medications');
+  if (!sheet) { Logger.log('Sheet not found'); return; }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const nameIdx   = headers.indexOf('name');
+  const dosageIdx = headers.indexOf('dosage');
+  const userIdx   = headers.indexOf('userId');
+  const doseIdx   = headers.indexOf('dosesTaken');
+
+  // Map: nameKey -> { rowNum (1-indexed), dosesTaken }
+  const best = {};
+  const rowsToDelete = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const nameKey = String(row[userIdx]) + '|' +
+                    String(row[nameIdx]).trim().toLowerCase() + '|' +
+                    String(row[dosageIdx]).trim().toLowerCase();
+    const doses = parseInt(row[doseIdx]) || 0;
+    const sheetRow = i + 1; // convert 0-based array index to 1-based sheet row
+
+    if (!best[nameKey]) {
+      best[nameKey] = { sheetRow, doses };
+    } else if (doses >= best[nameKey].doses) {
+      rowsToDelete.push(best[nameKey].sheetRow); // old best is now a duplicate
+      best[nameKey] = { sheetRow, doses };
+    } else {
+      rowsToDelete.push(sheetRow); // current row is the duplicate
+    }
+  }
+
+  // Delete in reverse order so indices don't shift
+  rowsToDelete.sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
+  Logger.log('Deleted ' + rowsToDelete.length + ' duplicate rows.');
 }

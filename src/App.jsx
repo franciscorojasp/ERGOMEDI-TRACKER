@@ -133,16 +133,21 @@ export default function App() {
       ]);
 
       // Deduplicate by id — keep the last occurrence (highest dosesTaken wins)
-      // This guards against duplicate rows in Google Sheets from previous buggy saves
-      const deduped = Object.values(
-        (medsList || []).reduce((acc, m) => {
-          const key = String(m.id);
-          if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) {
-            acc[key] = m;
-          }
-          return acc;
-        }, {})
-      );
+      // Layer 1: deduplicate by id
+      const byId = (medsList || []).reduce((acc, m) => {
+        const key = String(m.id);
+        if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) acc[key] = m;
+        return acc;
+      }, {});
+
+      // Layer 2: deduplicate by name+dosage — catches rows with DIFFERENT ids that are the same plan
+      const byName = Object.values(byId).reduce((acc, m) => {
+        const key = `${String(m.name).trim().toLowerCase()}|${String(m.dosage).trim().toLowerCase()}`;
+        if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) acc[key] = m;
+        return acc;
+      }, {});
+
+      const deduped = Object.values(byName);
 
       setMeds(deduped);
       setHistoryLogs(historyList || []);
