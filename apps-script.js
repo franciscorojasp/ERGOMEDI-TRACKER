@@ -101,14 +101,14 @@ function doGet(e) {
     else { med.id = Utilities.getUuid(); row[0] = med.id; sheet.appendRow(row); }
     result = { success: true, id: med.id };
   }
-  // DELETE MED
+  // DELETE MED — deletes ALL rows with this id (handles duplicates from previous bugs)
   else if (action === 'deleteMed' && userId) {
     const sheet = ss.getSheetByName(MEDS_SHEET_NAME);
     const data = sheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
+    // Iterate in reverse so row indices don't shift as we delete
+    for (let i = data.length - 1; i >= 1; i--) {
       if (data[i][0] == e.parameter.id && data[i][1] == userId) {
         sheet.deleteRow(i + 1);
-        break;
       }
     }
     result = { success: true };

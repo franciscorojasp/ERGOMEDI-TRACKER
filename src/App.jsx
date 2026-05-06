@@ -217,14 +217,15 @@ export default function App() {
   };
 
   const deleteMed = async (id) => {
-    if (!window.confirm("¿Eliminar este plan?")) return;
+    if (!window.confirm("¿Eliminar este plan permanentemente? Esta acción no se puede deshacer.")) return;
     const oldMeds = [...meds];
-    setMeds(meds.filter(m => m.id !== id));
+    setMeds(meds.filter(m => m.id !== id)); // Optimistic remove
     try {
       await api.deleteMed(id, user.id);
+      fetchData(user.id); // Confirm real backend state
     } catch (err) {
-      setMeds(oldMeds);
-      setErrorMessage("Error al eliminar.");
+      setMeds(oldMeds); // Rollback on error
+      setErrorMessage("Error al eliminar el plan. Intenta nuevamente.");
     }
   };
 
