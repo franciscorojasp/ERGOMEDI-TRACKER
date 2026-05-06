@@ -325,57 +325,117 @@ export default function App() {
 
   // PDF Export
   // Builds the PDF and returns a Blob (used by both download and share)
+  // Layout mirrors the reference design:
+  //   LEFT  column: logo image + "ERGOMEDI-TRACKER" label
+  //   RIGHT column: company name (teal, bold), RIF/address, phone/email,
+  //                 gap, Paciente + Médico
+  //   DARK BAND: report title + date
+  //   TABLE: medications
   const buildPDFBlob = async (specificMed = null) => {
     const docPdf = new jsPDF();
-    const pageW = docPdf.internal.pageSize.getWidth();
-    const pageH = docPdf.internal.pageSize.getHeight();
+    const pageW  = docPdf.internal.pageSize.getWidth();
+    const pageH  = docPdf.internal.pageSize.getHeight();
 
-    // Load logo PNG using canvas (reliable for large files)
+    // ── Load logo via canvas (handles large PNGs safely) ──────────
     const logoDataUrl = await new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        const MAX = 128;
-        const ratio = Math.min(MAX / img.naturalWidth, MAX / img.naturalHeight);
+        // Crop to square and resize to 64×64 px for PDF
+        const size   = Math.min(img.naturalWidth, img.naturalHeight);
+        const sx     = Math.round((img.naturalWidth  - size) / 2);
+        const sy     = Math.round((img.naturalHeight - size) / 2);
         const canvas = document.createElement('canvas');
-        canvas.width  = Math.round(img.naturalWidth  * ratio);
-        canvas.height = Math.round(img.naturalHeight * ratio);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.width = canvas.height = 96;
+        canvas.getContext('2d').drawImage(img, sx, sy, size, size, 0, 0, 96, 96);
         resolve(canvas.toDataURL('image/png'));
       };
       img.onerror = () => resolve(null);
       img.src = '/logo.png?v=' + Date.now();
     });
 
-    // ── HEADER BAND ──────────────────────────────────────────────
-    docPdf.setFillColor(13, 115, 119);
-    docPdf.rect(0, 0, pageW, 52, 'F');
+    // ── HEADER: white background, teal top border ─────────────────
+    const TEAL       = [13, 115, 119];
+    const DARK_TEAL  = [9, 80, 84];
+    const HEADER_H   = 58; // total header height before dark band
+    const LOGO_X     = 10;
+    const LOGO_Y     = 8;
+    const LOGO_SZ    = 34; // logo square size in mm
+    const RIGHT_X    = LOGO_X + LOGO_SZ + 8; // right column start
 
-    if (logoDataUrl) docPdf.addImage(logoDataUrl, 'PNG', 7, 5, 38, 38);
-    const textX = logoDataUrl ? 52 : 15;
+    // White header area
+    docPdf.setFillColor(255, 255, 255);
+    docPdf.rect(0, 0, pageW, HEADER_H, 'F');
 
-    // Company name + app name
-    docPdf.setFontSize(17);
-    docPdf.setTextColor(255, 255, 255);
+    // Teal top accent bar (3 mm)
+    docPdf.setFillColor(...TEAL);
+    docPdf.rect(0, 0, pageW, 3, 'F');
+
+    // Logo image
+    if (logoDataUrl) {
+      // Rounded-corner clip approximation: draw with a slight border
+      docPdf.setFillColor(...DARK_TEAL);
+      docPdf.roundedRect(LOGO_X - 1, LOGO_Y - 1, LOGO_SZ + 2, LOGO_SZ + 2, 3, 3, 'F');
+      docPdf.addImage(logoDataUrl, 'PNG', LOGO_X, LOGO_Y, LOGO_SZ, LOGO_SZ);
+    }
+
+    // "ERGOMEDI-TRACKER" label below logo
+    docPdf.setFontSize(10);
+    docPdf.setTextColor(...TEAL);
     docPdf.setFont(undefined, 'bold');
-    docPdf.text('ERGOEXPRESS, C.A.  —  ERGOMEDI-TRACKER', textX, 16);
+    docPdf.text('ERGOMEDI-TRACKER', LOGO_X, LOGO_Y + LOGO_SZ + 7);
 
-    // Company details
+    // ── RIGHT COLUMN: company info ────────────────────────────────
+    // Company name — large, teal, bold, right-aligned
+    docPdf.setFontSize(14);
+    docPdf.setTextColor(...TEAL);
+    docPdf.setFont(undefined, 'bold');
+    docPdf.text('ERGOEXPRESS, C.A.', pageW - 12, 11, { align: 'right' });
+
+    // RIF / address
     docPdf.setFontSize(7.5);
+    docPdf.setTextColor(80, 80, 80);
     docPdf.setFont(undefined, 'normal');
-    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', textX, 24);
-    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', textX, 31);
+    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', pageW - 12, 17, { align: 'right' });
+    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 22, { align: 'right' });
 
-    // Sub-header line
-    docPdf.setFillColor(9, 80, 84);
-    docPdf.rect(0, 52, pageW, 10, 'F');
+    // Thin divider line within right column
+    docPdf.setDrawColor(200, 200, 200);
+    docPdf.line(RIGHT_X, 25, pageW - 12, 25);
+
+    // Patient & Doctor — right-aligned, below the divider
+    const patientName = user?.patientName || '';
+    const doctorName  = user?.doctorName  || '';
+    docPdf.setFontSize(8);
+    docPdf.setTextColor(60, 60, 60);
+    if (patientName) {
+      docPdf.setFont(undefined, 'normal');
+      docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 32, {});
+      docPdf.setFont(undefined, 'bold');
+      docPdf.text(patientName, pageW - 12, 32, { align: 'right' });
+    }
+    if (doctorName) {
+      docPdf.setFont(undefined, 'normal');
+      docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 38, {});
+      docPdf.setFont(undefined, 'bold');
+      docPdf.text(doctorName, pageW - 12, 38, { align: 'right' });
+    }
+
+    // ── DARK BAND: report title + date ────────────────────────────
+    const BAND_Y = HEADER_H;
+    docPdf.setFillColor(...DARK_TEAL);
+    docPdf.rect(0, BAND_Y, pageW, 10, 'F');
     docPdf.setFontSize(8);
     docPdf.setTextColor(200, 240, 240);
+    docPdf.setFont(undefined, 'normal');
     docPdf.text(
       specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : 'REPORTE CONSOLIDADO DE PLANES',
-      textX, 59
+      pageW / 2, BAND_Y + 6.5, { align: 'center' }
     );
-    docPdf.text(`FECHA: ${new Date().toLocaleDateString('es-VE')}`, pageW - 15, 59, { align: 'right' });
+    docPdf.text(
+      `FECHA: ${new Date().toLocaleDateString('es-VE')}`,
+      pageW - 12, BAND_Y + 6.5, { align: 'right' }
+    );
 
     // ── TABLE ─────────────────────────────────────────────────────
     const targetMeds = specificMed ? [specificMed] : meds;
@@ -387,10 +447,10 @@ export default function App() {
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
     docPdf.autoTable({
-      startY: 66,
+      startY: BAND_Y + 14,
       head: [['MEDICAMENTO', 'DOSIS', 'HORARIOS', 'TOMAS ACUM.', 'PROGRESO']],
       body,
-      headStyles: { fillColor: [13, 115, 119], fontStyle: 'bold', textColor: 255, fontSize: 8 },
+      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 8 },
       styles: { fontSize: 8.5, cellPadding: 5 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
       columnStyles: { 4: { halign: 'center', fontStyle: 'bold' } },
@@ -400,13 +460,12 @@ export default function App() {
     docPdf.setFontSize(7);
     docPdf.setTextColor(140);
     docPdf.setFont(undefined, 'italic');
+    docPdf.setDrawColor(210);
+    docPdf.line(15, pageH - 12, pageW - 15, pageH - 12);
     docPdf.text(
       'Desarrollado por ERGOEXPRESS, C.A.  —  Todos los Derechos Reservados',
-      pageW / 2, pageH - 8, { align: 'center' }
+      pageW / 2, pageH - 7, { align: 'center' }
     );
-    // Footer divider line
-    docPdf.setDrawColor(180);
-    docPdf.line(15, pageH - 12, pageW - 15, pageH - 12);
 
     return docPdf.output('blob');
   };
@@ -829,40 +888,81 @@ export default function App() {
                </div>
 
                <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div className="input-group">
-                    <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                       <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TELÉFONO (PARA WHATSAPP)
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input-field" 
-                      placeholder="Ej: +58424..." 
-                      value={user.phone || ''} 
-                      onChange={e => setUser({...user, phone: e.target.value})}
-                      onBlur={() => updateProfile({ phone: user.phone })}
-                      style={{ background: 'var(--bg-main)' }} 
-                    />
+
+                  {/* ── DATOS DEL PACIENTE ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Datos para Reportes PDF</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <User size={14} style={{ display: 'inline', marginRight: '5px' }} /> NOMBRE DEL PACIENTE
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Ej: María López"
+                          value={user.patientName || ''}
+                          onChange={e => setUser({...user, patientName: e.target.value})}
+                          onBlur={() => updateProfile({ patientName: user.patientName })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <Shield size={14} style={{ display: 'inline', marginRight: '5px' }} /> MÉDICO TRATANTE
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Ej: Dr. Roberto Leyva"
+                          value={user.doctorName || ''}
+                          onChange={e => setUser({...user, doctorName: e.target.value})}
+                          onBlur={() => updateProfile({ doctorName: user.doctorName })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="input-group">
-                    <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                       <Shield size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input-field" 
-                      placeholder="Obtenlo en callmebot.com" 
-                      value={user.waApiKey || ''} 
-                      onChange={e => setUser({...user, waApiKey: e.target.value})}
-                      onBlur={() => updateProfile({ waApiKey: user.waApiKey })}
-                      style={{ background: 'var(--bg-main)' }} 
-                    />
-                    <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                      * El sistema enviará alertas automáticas por WhatsApp 10 y 5 minutos antes de cada toma.
-                    </p>
+                  {/* ── NOTIFICACIONES WHATSAPP ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Notificaciones WhatsApp</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                           <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TELÉFONO (PARA WHATSAPP)
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Ej: +58424..."
+                          value={user.phone || ''}
+                          onChange={e => setUser({...user, phone: e.target.value})}
+                          onBlur={() => updateProfile({ phone: user.phone })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                           <Bell size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Obtenlo en callmebot.com"
+                          value={user.waApiKey || ''}
+                          onChange={e => setUser({...user, waApiKey: e.target.value})}
+                          onBlur={() => updateProfile({ waApiKey: user.waApiKey })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                        <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                          * Las alertas se enviarán a las horas configuradas en la hora local de tu dispositivo (10 min antes, 5 min antes y en el momento exacto).
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                  <div style={{ display: 'flex', gap: '12px' }}>
                     <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444', flex: 1 }}>
                       <LogOut size={20} /> SALIR
                     </button>

@@ -2,11 +2,18 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxpmkzeyLvd4t2MtxEHD
 
 export const api = {
   async login(identifier) {
-    return this.jsonp('login', { identifier });
+    // Send the device's UTC offset (in minutes) so GAS can fire alerts
+    // at the correct local time for each user.
+    // -new Date().getTimezoneOffset() gives: UTC-4 → -240, UTC+2 → +120
+    const utcOffset = -new Date().getTimezoneOffset();
+    return this.jsonp('login', { identifier, utcOffset });
   },
 
   async updateProfile(userId, profileData) {
-    return this.jsonp('updateProfile', { userId, data: JSON.stringify(profileData) });
+    // Always refresh utcOffset in case user travelled / DST changed
+    const utcOffset = -new Date().getTimezoneOffset();
+    const fullProfile = { ...profileData, utcOffset };
+    return this.jsonp('updateProfile', { userId, data: JSON.stringify(fullProfile) });
   },
 
   async getMeds(userId) {
