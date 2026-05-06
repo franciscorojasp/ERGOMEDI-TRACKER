@@ -131,9 +131,22 @@ export default function App() {
         api.getMeds(uid),
         api.getHistory(uid)
       ]);
-      setMeds(medsList || []);
+
+      // Deduplicate by id — keep the last occurrence (highest dosesTaken wins)
+      // This guards against duplicate rows in Google Sheets from previous buggy saves
+      const deduped = Object.values(
+        (medsList || []).reduce((acc, m) => {
+          const key = String(m.id);
+          if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) {
+            acc[key] = m;
+          }
+          return acc;
+        }, {})
+      );
+
+      setMeds(deduped);
       setHistoryLogs(historyList || []);
-      if (medsList) setupNotifications(medsList);
+      if (deduped.length) setupNotifications(deduped);
     } catch (err) {
       console.error("Sync error:", err);
     } finally {

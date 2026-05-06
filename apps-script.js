@@ -130,7 +130,7 @@ function doGet(e) {
       const sheet = ss.getSheetByName(MEDS_SHEET_NAME);
       const data = sheet.getDataRange().getValues();
       const headers = data[0];
-      result = data.slice(1)
+      const rows = data.slice(1)
         .filter(row => row[1] == userId)
         .map(row => {
           let obj = {};
@@ -140,6 +140,16 @@ function doGet(e) {
           }
           return obj;
         });
+
+      // Deduplicate by id — keep entry with highest dosesTaken (most up-to-date)
+      const seen = {};
+      rows.forEach(med => {
+        const key = String(med.id);
+        if (!seen[key] || (med.dosesTaken || 0) >= (seen[key].dosesTaken || 0)) {
+          seen[key] = med;
+        }
+      });
+      result = Object.values(seen);
     } else if (action === 'getHistory') {
       const sheet = ss.getSheetByName(HISTORY_SHEET_NAME);
       const data = sheet.getDataRange().getValues();
