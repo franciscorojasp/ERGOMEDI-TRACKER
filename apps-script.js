@@ -179,76 +179,127 @@ function doPost(e) {
 }
 
 /**
- * Función que debe ejecutarse cada minuto mediante un activador (trigger)
+ * Función que debe ejecutarse cada minuto mediante un activador (trigger).
+ *
+ * CORRECCIONES:
+ * 1. Zona horaria: Compara horas como strings "HH:MM" usando la zona del script
+ *    (Ajusta en: Configuración del proyecto de Apps Script > Zona horaria)
+ * 2. Deduplicación: Usa PropertiesService para no re-enviar la misma alerta
+ * 3. Canal doble: Email (nativo, sin config extra) + WhatsApp si el usuario lo configuró
  */
 function checkAndSendAlerts() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
   const medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
-  
-  const users = usersSheet.getDataRange().getValues();
-  const meds = medsSheet.getDataRange().getValues();
-  
+
+  const usersData = usersSheet.getDataRange().getValues();
+  const medsData = medsSheet.getDataRange().getValues();
+
+  // Hora actual en la zona horaria del script (configúrala en Apps Script > Configuración)
   const now = new Date();
-  const currentHours = now.getHours();
-  const currentMinutes = now.getMinutes();
-  
-  // Mapear cabeceras
-  const userHeaders = users[0];
-  const medHeaders = meds[0];
-  
-  users.slice(1).forEach(userRow => {
-    const userId = userRow[0];
-    const phone = userRow[5];
-    const apiKey = userRow[6];
-    
-    if (!phone || !apiKey) return; // No tiene configurado WhatsApp
-    
-    meds.slice(1).forEach(medRow => {
-      if (medRow[1] != userId) return;
-      
+  const nowStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm');
+  const today = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  // Cache anti-duplicados: clave = userId_medId_time_offset
+  const props = PropertiesService.getScriptProperties();
+  const cacheKey = 'alerts_sent_' + today;
+  let sentAlerts = {};
+  try { sentAlerts = JSON.parse(props.getProperty(cacheKey) || '{}'); } catch(e) {}
+
+  // Generar los 3 tiempos de alerta: -10min, -5min, 0min
+  function addMinutes(timeStr, mins) {
+    const [h, m] = timeStr.split(':').map(Number);
+    const d = new Date(2000, 0, 1, h, m + mins);
+    return Utilities.formatDate(d, 'UTC', 'HH:mm');
+  }
+
+  usersData.slice(1).forEach(userRow => {
+    const userId    = String(userRow[0]);
+    const userEmail = String(userRow[1]); // Email registrado en el login
+    const phone     = String(userRow[5] || '');
+    const apiKey    = String(userRow[6] || '');
+
+    medsData.slice(1).forEach(medRow => {
+      if (String(medRow[1]) !== userId) return;
+
+      const medId   = String(medRow[0]);
       const medName = medRow[2];
-      const dosage = medRow[3];
-      const times = JSON.parse(medRow[4] || '[]');
-      
-      times.forEach(timeStr => {
-        const [h, m] = timeStr.split(':').map(Number);
-        
-        // Calcular diferencia
-        const alertTime = new Date();
-        alertTime.setHours(h, m, 0, 0);
-        
-        const diffMs = alertTime.getTime() - now.getTime();
-        const diffMin = Math.round(diffMs / 60000);
-        
-        let message = "";
-        if (diffMin === 10) {
-          message = `⏰ *Recordatorio ERGOMEDI* (10 min): Es casi hora de tu dosis de *${medName}* (${dosage}). Prepárala.`;
-        } else if (diffMin === 5) {
-          message = `⚠️ *Recordatorio ERGOMEDI* (5 min): En 5 minutos debes tomar *${medName}* (${dosage}).`;
-        } else if (diffMin === 0) {
-          message = `✅ *¡ES HORA! ERGOMEDI*: Toma tu dosis de *${medName}* (${dosage}) ahora mismo. ¡No lo olvides!`;
-        }
-        
-        if (message) {
-          sendWhatsAppMessage(phone, message, apiKey);
-        }
+      const dosage  = medRow[3];
+      let times = [];
+      try { times = JSON.parse(medRow[4] || '[]'); } catch(e) {}
+
+      times.forEach(scheduledTime => {
+        // Calcular los 3 momentos de alerta
+        const alerts = [
+          { offset: -10, triggerTime: addMinutes(scheduledTime, -10), label: '10 min' },
+          { offset: -5,  triggerTime: addMinutes(scheduledTime, -5),  label: '5 min'  },
+          { offset: 0,   triggerTime: scheduledTime,                  label: '¡AHORA!'  },
+        ];
+
+        alerts.forEach(alert => {
+          if (alert.triggerTime !== nowStr) return;
+
+          // Clave única para este envío
+          const dedupeKey = `${userId}_${medId}_${scheduledTime}_${alert.offset}`;
+          if (sentAlerts[dedupeKey]) return; // Ya fue enviada
+
+          // ── MENSAJE ──────────────────────────────────────────────
+          let subject = '';
+          let body    = '';
+          let waMsg   = '';
+
+          if (alert.offset === -10) {
+            subject = `⏰ En 10 minutos: ${medName}`;
+            body    = `Hola,\n\nEn 10 minutos es hora de tomar tu dosis de:\n\n• Medicamento: ${medName}\n• Dosis: ${dosage}\n• Hora programada: ${scheduledTime}\n\nPrepara tu medicación con anticipación.\n\n— ERGOMEDI-TRACKER`;
+            waMsg   = `⏰ *Recordatorio ERGOMEDI* _(10 min)_: En 10 minutos debes tomar *${medName}* (${dosage}) a las ${scheduledTime}. ¡Prepárala!`;
+          } else if (alert.offset === -5) {
+            subject = `⚠️ En 5 minutos: ${medName}`;
+            body    = `Hola,\n\nEn 5 minutos es hora de tomar tu dosis de:\n\n• Medicamento: ${medName}\n• Dosis: ${dosage}\n• Hora programada: ${scheduledTime}\n\n¡No lo olvides!\n\n— ERGOMEDI-TRACKER`;
+            waMsg   = `⚠️ *Recordatorio ERGOMEDI* _(5 min)_: Faltan 5 minutos para tomar *${medName}* (${dosage}).`;
+          } else {
+            subject = `✅ ¡HORA DE TU DOSIS! ${medName}`;
+            body    = `Hola,\n\n¡Es el momento de tomar tu medicamento!\n\n• Medicamento: ${medName}\n• Dosis: ${dosage}\n• Hora: ${scheduledTime}\n\nAbre ERGOMEDI-TRACKER y confirma la toma.\n\n— ERGOMEDI-TRACKER`;
+            waMsg   = `✅ *¡ES HORA! ERGOMEDI*: Toma tu dosis de *${medName}* (${dosage}) ahora mismo. ¡No lo olvides!`;
+          }
+
+          // ── EMAIL (canal principal, siempre disponible) ───────────
+          if (userEmail && userEmail.includes('@')) {
+            try {
+              MailApp.sendEmail({ to: userEmail, subject: subject, body: body });
+              console.log(`Email enviado a ${userEmail} para ${medName} (${alert.label})`);
+            } catch(err) {
+              console.error(`Error email a ${userEmail}: ${err.message}`);
+            }
+          }
+
+          // ── WHATSAPP (canal secundario, solo si está configurado) ──
+          if (phone && apiKey) {
+            sendWhatsAppMessage(phone, waMsg, apiKey);
+          }
+
+          // Marcar como enviada
+          sentAlerts[dedupeKey] = true;
+        });
       });
     });
   });
+
+  // Guardar cache (se auto-limpia al cambiar de día)
+  props.setProperty(cacheKey, JSON.stringify(sentAlerts));
+
+  // Limpiar cache de días anteriores para no acumular
+  const yesterday = Utilities.formatDate(new Date(now.getTime() - 86400000), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  props.deleteProperty('alerts_sent_' + yesterday);
 }
 
 function sendWhatsAppMessage(phone, text, apiKey) {
-  // Usando CallMeBot API (Gratis/Simple para prototipos)
-  // Nota: El número debe estar en formato internacional sin el + (ej: 58424...)
   const cleanPhone = phone.replace('+', '').replace(/\s/g, '');
   const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
-  
   try {
-    UrlFetchApp.fetch(url);
-    console.log(`Mensaje enviado a ${phone}: ${text}`);
+    UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    console.log(`WhatsApp enviado a ${phone}`);
   } catch (e) {
-    console.error(`Error enviando WhatsApp a ${phone}: ${e.message}`);
+    console.error(`Error WhatsApp a ${phone}: ${e.message}`);
   }
 }
 
