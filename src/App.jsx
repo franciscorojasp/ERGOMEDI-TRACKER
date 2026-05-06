@@ -62,9 +62,9 @@ export default function App() {
   const [formData, setFormData] = useState(initialFormState);
 
   useEffect(() => {
-    if (user) fetchData(user.id, true);
+    if (user?.id) fetchData(user.id, true);
     else setLoading(false);
-  }, [user]);
+  }, [user?.id]);
 
   // Local-timezone date helper — avoids UTC offset bugs (e.g. UTC-4 users after 8pm)
   const localToday = () => {
@@ -87,7 +87,7 @@ export default function App() {
     };
     const t = scheduleReset();
     return () => clearTimeout(t);
-  }, [user]);
+  }, [user?.id]);
 
   // PWA Install prompt capture
   useEffect(() => {
