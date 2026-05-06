@@ -12,8 +12,11 @@ export default defineConfig({
         name: 'ERGOMEDI-TRACKER',
         short_name: 'ErgoMedi',
         description: 'Seguimiento profesional de medicación',
-        theme_color: '#040610',
+        theme_color: '#0d7377',
         background_color: '#040610',
+        display: 'standalone',
+        start_url: '/',
+        orientation: 'portrait-primary',
         icons: [
           {
             src: 'icon-192.png',
@@ -23,7 +26,8 @@ export default defineConfig({
           {
             src: 'icon-512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }

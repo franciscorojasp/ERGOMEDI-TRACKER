@@ -40,8 +40,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginIdentifier, setLoginIdentifier] = useState("");
-  const [authMode, setAuthMode] = useState('login'); 
-  
+  const [authMode, setAuthMode] = useState('login');
+  // PWA Install prompt
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   const audioRef = useRef(null);
 
   const initialFormState = {
@@ -62,6 +65,39 @@ export default function App() {
     if (user) fetchData(user.id, true);
     else setLoading(false);
   }, [user]);
+
+  // PWA Install prompt capture
+  useEffect(() => {
+    // Don't show if already installed as standalone app
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+    if (window.navigator.standalone === true) return; // iOS Safari
+
+    const handler = (e) => {
+      e.preventDefault(); // Prevent default mini-infobar
+      setInstallPromptEvent(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Hide banner if user installs from outside
+    window.addEventListener('appinstalled', () => {
+      setShowInstallBanner(false);
+      setInstallPromptEvent(null);
+    });
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!installPromptEvent) return;
+    await installPromptEvent.prompt();
+    const { outcome } = await installPromptEvent.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false);
+      setInstallPromptEvent(null);
+    }
+  };
 
   const fetchData = async (uid, showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -601,6 +637,29 @@ export default function App() {
       )}
 
       <div className="fab" onClick={() => setShowModal(true)} style={{ width: '64px', height: '64px' }}><Plus size={32} /></div>
+
+      {/* ── PWA Install Banner ── */}
+      {showInstallBanner && (
+        <div className="pwa-install-banner">
+          <div className="pwa-install-content">
+            <div className="pwa-install-icon">
+              <Pill size={28} style={{ color: 'var(--primary-light)' }} />
+            </div>
+            <div className="pwa-install-text">
+              <strong>Instalar ERGOMEDI</strong>
+              <span>Acceso rápido desde tu pantalla de inicio</span>
+            </div>
+          </div>
+          <div className="pwa-install-actions">
+            <button className="pwa-btn-install" onClick={handleInstallPWA}>
+              Instalar
+            </button>
+            <button className="pwa-btn-dismiss" onClick={() => setShowInstallBanner(false)}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <nav className="nav-bottom">
         <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}><Activity size={24} /><span>Dashboard</span></div>
