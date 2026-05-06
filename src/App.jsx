@@ -458,7 +458,7 @@ export default function App() {
                   )}
 
                   {/* Indicador visual de tomas diarias */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                     {Array.from({ length: med.timesPerDay || 1 }).map((_, i) => (
                       <div 
                         key={i} 
@@ -476,6 +476,60 @@ export default function App() {
                       {takenToday} de {med.timesPerDay} hoy
                     </span>
                   </div>
+
+                  {/* Horarios de tomas */}
+                  {Array.isArray(med.times) && med.times.length > 0 && (() => {
+                    const nowTime = new Date();
+                    const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+                    // Find index of next upcoming dose
+                    const nextIdx = med.times.findIndex(t => {
+                      const [h, m] = t.split(':').map(Number);
+                      return (h * 60 + m) > nowMins;
+                    });
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+                        {med.times.map((t, i) => {
+                          const [h, m] = t.split(':').map(Number);
+                          const chipMins = h * 60 + m;
+                          const isPast   = chipMins < nowMins;
+                          const isNext   = i === nextIdx;
+                          const isTaken  = i < takenToday;
+                          // Format to 12h
+                          const label = new Date(2000, 0, 1, h, m)
+                            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+                          return (
+                            <div key={i} style={{
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                              padding: '4px 10px',
+                              borderRadius: '20px',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              border: isNext
+                                ? '1.5px solid var(--primary-light)'
+                                : isTaken
+                                  ? '1.5px solid var(--primary)'
+                                  : '1.5px solid var(--border)',
+                              background: isNext
+                                ? 'var(--primary-dim)'
+                                : isTaken
+                                  ? 'rgba(13,115,119,0.15)'
+                                  : 'var(--bg-main)',
+                              color: isNext
+                                ? 'var(--primary-light)'
+                                : isTaken
+                                  ? 'var(--primary-light)'
+                                  : 'var(--text-muted)',
+                              opacity: isPast && !isTaken ? 0.5 : 1,
+                            }}>
+                              {isTaken && <CheckCircle2 size={10} />}
+                              {isNext && !isTaken && <Clock size={10} />}
+                              {label}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
                     <div className="progress-bar" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
