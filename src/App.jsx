@@ -342,14 +342,17 @@ export default function App() {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         // The original image contains text at the bottom.
-        // We crop ONLY the top square part (width x width)
-        const size = img.naturalWidth;
+        // We want to crop out the bottom ~18% and keep a square from the top.
+        const cropH = img.naturalHeight * 0.82;
+        const cropW = cropH; // Keep it square
+        const sx = (img.naturalWidth - cropW) / 2;
+        const sy = 0; // Align to top
+        
         const canvas = document.createElement('canvas');
-        // We resize to a standard 128x128 to keep PDF size small
         canvas.width = 128;
         canvas.height = 128;
         // drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
-        canvas.getContext('2d').drawImage(img, 0, 0, size, size, 0, 0, 128, 128);
+        canvas.getContext('2d').drawImage(img, sx, sy, cropW, cropH, 0, 0, 128, 128);
         resolve(canvas.toDataURL('image/png'));
       };
       img.onerror = () => resolve(null);
@@ -394,21 +397,20 @@ export default function App() {
     docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 24, { align: 'right' });
 
     // Patient & Doctor
-    const patientName = user?.patientName || '';
-    const doctorName  = user?.doctorName  || '';
+    const patientName = user?.patientName || '(Configurar en Ajustes)';
+    const doctorName  = user?.doctorName  || '(Configurar en Ajustes)';
+    
     docPdf.setFontSize(8);
-    if (patientName) {
-      docPdf.setFont(undefined, 'normal');
-      docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 36, {});
-      docPdf.setFont(undefined, 'bold');
-      docPdf.text(patientName, pageW - 12, 36, { align: 'right' });
-    }
-    if (doctorName) {
-      docPdf.setFont(undefined, 'normal');
-      docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 42, {});
-      docPdf.setFont(undefined, 'bold');
-      docPdf.text(doctorName, pageW - 12, 42, { align: 'right' });
-    }
+    
+    docPdf.setFont(undefined, 'normal');
+    docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 36, {});
+    docPdf.setFont(undefined, 'bold');
+    docPdf.text(patientName, pageW - 12, 36, { align: 'right' });
+    
+    docPdf.setFont(undefined, 'normal');
+    docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 42, {});
+    docPdf.setFont(undefined, 'bold');
+    docPdf.text(doctorName, pageW - 12, 42, { align: 'right' });
 
     // ── SUB-HEADER BAND: report title + date ──────────────────────
     const BAND_Y = HEADER_H;
