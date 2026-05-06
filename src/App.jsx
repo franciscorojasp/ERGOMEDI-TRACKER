@@ -244,6 +244,30 @@ export default function App() {
     }
   };
 
+  const undoLastDose = async (med) => {
+    if (!user) return;
+    const today = localToday();
+    const currentTakenToday = med.lastResetDate === today ? (med.takenTodayCount || 0) : 0;
+    if (currentTakenToday <= 0) return; // Nothing to undo
+
+    const updatedMed = {
+      ...med,
+      dosesTaken: Math.max(0, (med.dosesTaken || 0) - 1),
+      takenTodayCount: currentTakenToday - 1,
+      lastResetDate: today,
+    };
+
+    // Optimistic update
+    setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
+
+    try {
+      await api.saveMed(updatedMed, user.id);
+      fetchData(user.id); // Refresh to remove last history entry
+    } catch (err) {
+      console.error('Error undoing dose:', err);
+    }
+  };
+
   const updateProfile = async (profileData) => {
     if (!user) return;
     setLoading(true);
@@ -544,27 +568,56 @@ export default function App() {
                     <span style={{ color: 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
                     <span>{med.dosesTaken} / {totalNeeded} TOMAS TOTALES</span>
                   </div>
-                  <button 
-                    disabled={isDoneToday} 
-                    onClick={() => markAsTaken(med)} 
-                    className="btn-primary" 
-                    style={{ 
-                      marginTop: '20px', 
-                      height: '52px', 
-                      background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', 
-                      color: isDoneToday ? 'var(--text-muted)' : 'white', 
-                      border: isDoneToday ? '1px solid var(--border)' : 'none',
-                      opacity: isDoneToday ? 0.7 : 1
-                    }}
-                  >
-                    {isDoneToday ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                        <CheckCircle2 size={18} /> TOMAS COMPLETADAS
-                      </div>
-                    ) : (
-                      `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
+                  {/* Action buttons row */}
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px', alignItems: 'stretch' }}>
+                    <button 
+                      disabled={isDoneToday} 
+                      onClick={() => markAsTaken(med)} 
+                      className="btn-primary" 
+                      style={{ 
+                        flex: 1,
+                        height: '52px', 
+                        background: isDoneToday ? 'var(--bg-main)' : 'var(--primary)', 
+                        color: isDoneToday ? 'var(--text-muted)' : 'white', 
+                        border: isDoneToday ? '1px solid var(--border)' : 'none',
+                        opacity: isDoneToday ? 0.7 : 1
+                      }}
+                    >
+                      {isDoneToday ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <CheckCircle2 size={18} /> TOMAS COMPLETADAS
+                        </div>
+                      ) : (
+                        `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
+                      )}
+                    </button>
+
+                    {/* Undo button — only visible when at least 1 dose was logged today */}
+                    {takenToday > 0 && (
+                      <button
+                        onClick={() => undoLastDose(med)}
+                        title="Deshacer última toma registrada"
+                        style={{
+                          height: '52px',
+                          width: '52px',
+                          flexShrink: 0,
+                          background: 'transparent',
+                          border: '1.5px solid var(--border)',
+                          borderRadius: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          color: 'var(--text-muted)',
+                          transition: 'border-color 0.2s, color 0.2s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                      >
+                        <RotateCcw size={18} />
+                      </button>
                     )}
-                  </button>
+                  </div>
                 </div>
               );
             })}
