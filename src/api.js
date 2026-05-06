@@ -12,8 +12,9 @@ export const api = {
   async getMeds(userId) {
     try {
       const data = await this.jsonp('getMeds', { userId });
-      this.syncLocalMeds(data);
-      return data;
+      const normalized = (data || []).map(this.normalizeMed);
+      this.syncLocalMeds(normalized);
+      return normalized;
     } catch (error) {
       return this.getLocalMeds();
     }
@@ -119,11 +120,39 @@ export const api = {
     });
   },
 
-  getLocalMeds() { return JSON.parse(localStorage.getItem('meds') || '[]'); },
+  getLocalMeds() { return (JSON.parse(localStorage.getItem('meds') || '[]')).map(this.normalizeMed); },
   syncLocalMeds(meds) { localStorage.setItem('meds', JSON.stringify(meds)); },
   getLocalHistory() { return JSON.parse(localStorage.getItem('history') || '[]'); },
   syncLocalHistory(history) { localStorage.setItem('history', JSON.stringify(history)); },
   saveLocalMed(med) { /* fallback simple */ },
   deleteLocalMed(id) { /* fallback simple */ },
-  saveLocalHistory(log) { /* fallback simple */ }
+  saveLocalHistory(log) { /* fallback simple */ },
+
+  /**
+   * Ensures `times` is always a proper string[] array, regardless of how
+   * Google Sheets stored it (JSON string, empty string, null, already array).
+   * If times is missing/empty, generates default times spread across the day.
+   */
+  normalizeMed(med) {
+    let times = med.times;
+
+    // Parse if it came as a JSON string from Sheets
+    if (typeof times === 'string') {
+      try { times = JSON.parse(times); } catch (e) { times = []; }
+    }
+
+    // Ensure it's a non-empty array of valid HH:MM strings
+    if (!Array.isArray(times) || times.length === 0) {
+      const count = parseInt(med.timesPerDay) || 1;
+      // Generate evenly-spaced times starting at 08:00
+      times = Array.from({ length: count }, (_, i) => {
+        const totalMins = 8 * 60 + Math.round((12 * 60 / count) * i);
+        const h = Math.floor(totalMins / 60) % 24;
+        const m = totalMins % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      });
+    }
+
+    return { ...med, times };
+  }
 };
