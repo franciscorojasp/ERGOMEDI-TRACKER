@@ -325,6 +325,8 @@ export default function App() {
   // Builds the PDF and returns a Blob (used by both download and share)
   const buildPDFBlob = async (specificMed = null) => {
     const docPdf = new jsPDF();
+    const pageW = docPdf.internal.pageSize.getWidth();
+    const pageH = docPdf.internal.pageSize.getHeight();
 
     // Load logo PNG using canvas (reliable for large files)
     const logoDataUrl = await new Promise((resolve) => {
@@ -343,33 +345,67 @@ export default function App() {
       img.src = '/logo.png?v=' + Date.now();
     });
 
+    // ── HEADER BAND ──────────────────────────────────────────────
     docPdf.setFillColor(13, 115, 119);
-    docPdf.rect(0, 0, 210, 44, 'F');
-    if (logoDataUrl) docPdf.addImage(logoDataUrl, 'PNG', 8, 6, 32, 32);
-    docPdf.setFontSize(22);
+    docPdf.rect(0, 0, pageW, 52, 'F');
+
+    if (logoDataUrl) docPdf.addImage(logoDataUrl, 'PNG', 7, 5, 38, 38);
+    const textX = logoDataUrl ? 52 : 15;
+
+    // Company name + app name
+    docPdf.setFontSize(17);
     docPdf.setTextColor(255, 255, 255);
-    docPdf.text("ERGOMEDI-TRACKER", logoDataUrl ? 48 : 105, 22, { align: logoDataUrl ? 'left' : 'center' });
-    docPdf.setFontSize(9);
-    docPdf.text("SISTEMA PROFESIONAL DE CONTROL MÉDICO", logoDataUrl ? 48 : 105, 31, { align: logoDataUrl ? 'left' : 'center' });
-    docPdf.setTextColor(100);
-    docPdf.setFontSize(12);
-    docPdf.text(specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : "REPORTE CONSOLIDADO DEL PLAN", 15, 58);
-    docPdf.text(`FECHA: ${new Date().toLocaleDateString()}`, 195, 58, { align: 'right' });
+    docPdf.setFont(undefined, 'bold');
+    docPdf.text('ERGOEXPRESS, C.A.  —  ERGOMEDI-TRACKER', textX, 16);
+
+    // Company details
+    docPdf.setFontSize(7.5);
+    docPdf.setFont(undefined, 'normal');
+    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', textX, 24);
+    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', textX, 31);
+
+    // Sub-header line
+    docPdf.setFillColor(9, 80, 84);
+    docPdf.rect(0, 52, pageW, 10, 'F');
+    docPdf.setFontSize(8);
+    docPdf.setTextColor(200, 240, 240);
+    docPdf.text(
+      specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : 'REPORTE CONSOLIDADO DE PLANES',
+      textX, 59
+    );
+    docPdf.text(`FECHA: ${new Date().toLocaleDateString('es-VE')}`, pageW - 15, 59, { align: 'right' });
+
+    // ── TABLE ─────────────────────────────────────────────────────
     const targetMeds = specificMed ? [specificMed] : meds;
     const body = targetMeds.map(m => [
       m.name.toUpperCase(),
       m.dosage || 'N/A',
-      m.times?.join(', ') || 'N/A',
-      `${m.dosesTaken} / ${(m.durationDays || 0) * (m.timesPerDay || 1)}`,
+      Array.isArray(m.times) ? m.times.join(', ') : (m.times || 'N/A'),
+      `${m.dosesTaken || 0} / ${(m.durationDays || 0) * (m.timesPerDay || 1)}`,
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
     docPdf.autoTable({
-      startY: 68,
+      startY: 66,
       head: [['MEDICAMENTO', 'DOSIS', 'HORARIOS', 'TOMAS ACUM.', 'PROGRESO']],
       body,
-      headStyles: { fillColor: [13, 115, 119], fontWeight: 'bold' },
-      styles: { fontSize: 9, cellPadding: 5 }
+      headStyles: { fillColor: [13, 115, 119], fontStyle: 'bold', textColor: 255, fontSize: 8 },
+      styles: { fontSize: 8.5, cellPadding: 5 },
+      alternateRowStyles: { fillColor: [240, 250, 250] },
+      columnStyles: { 4: { halign: 'center', fontStyle: 'bold' } },
     });
+
+    // ── FOOTER ────────────────────────────────────────────────────
+    docPdf.setFontSize(7);
+    docPdf.setTextColor(140);
+    docPdf.setFont(undefined, 'italic');
+    docPdf.text(
+      'Desarrollado por ERGOEXPRESS, C.A.  —  Todos los Derechos Reservados',
+      pageW / 2, pageH - 8, { align: 'center' }
+    );
+    // Footer divider line
+    docPdf.setDrawColor(180);
+    docPdf.line(15, pageH - 12, pageW - 15, pageH - 12);
+
     return docPdf.output('blob');
   };
 
@@ -578,8 +614,8 @@ export default function App() {
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{med.dosage} • {med.timesPerDay} veces al día</p>
                     </div>
                     <div style={{ display: 'flex', gap: '14px' }}>
-                       <Share2 size={18} onClick={() => shareToWhatsApp(med.name, progress)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
-                       <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
+                       <Share2 size={18} onClick={() => shareReportWhatsApp(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Compartir por WhatsApp" />
+                       <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Descargar PDF" />
                        <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
                        <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
                     </div>
