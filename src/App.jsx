@@ -402,15 +402,21 @@ export default function App() {
     
     docPdf.setFontSize(8);
     
-    docPdf.setFont(undefined, 'normal');
-    docPdf.text('Paciente: ', pageW - 12 - docPdf.getTextWidth(patientName), 36, {});
+    // 1. Paciente
     docPdf.setFont(undefined, 'bold');
-    docPdf.text(patientName, pageW - 12, 36, { align: 'right' });
+    const patientWidth = docPdf.getTextWidth(patientName);
+    docPdf.text(patientName, pageW - 12, 34, { align: 'right' });
     
     docPdf.setFont(undefined, 'normal');
-    docPdf.text('Médico Tratante: ', pageW - 12 - docPdf.getTextWidth(doctorName), 42, {});
+    docPdf.text('Paciente: ', pageW - 12 - patientWidth, 34, { align: 'right' });
+    
+    // 2. Médico Tratante
     docPdf.setFont(undefined, 'bold');
-    docPdf.text(doctorName, pageW - 12, 42, { align: 'right' });
+    const doctorWidth = docPdf.getTextWidth(doctorName);
+    docPdf.text(doctorName, pageW - 12, 40, { align: 'right' });
+    
+    docPdf.setFont(undefined, 'normal');
+    docPdf.text('Médico Tratante: ', pageW - 12 - doctorWidth, 40, { align: 'right' });
 
     // ── SUB-HEADER BAND: report title + date ──────────────────────
     const BAND_Y = HEADER_H;
