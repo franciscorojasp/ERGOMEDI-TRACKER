@@ -321,20 +321,42 @@ export default function App() {
     }
   };
 
-  // PDF Export remains same
+  // PDF Export
   const exportPDF = async (specificMed = null) => {
     const docPdf = new jsPDF();
+
+    // Load logo for PDF embedding
+    let logoDataUrl = null;
+    try {
+      const resp = await fetch('/logo.svg');
+      const svgText = await resp.text();
+      const blob = new Blob([svgText], { type: 'image/svg+xml' });
+      logoDataUrl = await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(blob);
+      });
+    } catch (_) { /* logo optional */ }
+
+    // Teal header bar
     docPdf.setFillColor(13, 115, 119);
-    docPdf.rect(0, 0, 210, 40, 'F');
-    docPdf.setFontSize(24);
+    docPdf.rect(0, 0, 210, 44, 'F');
+
+    // Embed logo if loaded
+    if (logoDataUrl) {
+      docPdf.addImage(logoDataUrl, 'SVG', 8, 6, 32, 32);
+    }
+
+    docPdf.setFontSize(22);
     docPdf.setTextColor(255, 255, 255);
-    docPdf.text("ERGOMEDI-TRACKER", 105, 25, { align: 'center' });
-    docPdf.setFontSize(10);
-    docPdf.text("SISTEMA PROFESIONAL DE CONTROL MÉDICO", 105, 33, { align: 'center' });
+    docPdf.text("ERGOMEDI-TRACKER", logoDataUrl ? 48 : 105, 22, { align: logoDataUrl ? 'left' : 'center' });
+    docPdf.setFontSize(9);
+    docPdf.text("SISTEMA PROFESIONAL DE CONTROL MÉDICO", logoDataUrl ? 48 : 105, 31, { align: logoDataUrl ? 'left' : 'center' });
+
     docPdf.setTextColor(100);
     docPdf.setFontSize(12);
-    docPdf.text(specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : "REPORTE CONSOLIDADO DEL PLAN", 15, 55);
-    docPdf.text(`FECHA: ${new Date().toLocaleDateString()}`, 195, 55, { align: 'right' });
+    docPdf.text(specificMed ? `PLAN DETALLADO: ${specificMed.name.toUpperCase()}` : "REPORTE CONSOLIDADO DEL PLAN", 15, 58);
+    docPdf.text(`FECHA: ${new Date().toLocaleDateString()}`, 195, 58, { align: 'right' });
     const targetMeds = specificMed ? [specificMed] : meds;
     const body = targetMeds.map(m => [
       m.name.toUpperCase(),
@@ -344,7 +366,7 @@ export default function App() {
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
     docPdf.autoTable({
-      startY: 65,
+      startY: 68,
       head: [['MEDICAMENTO', 'DOSIS', 'HORARIOS', 'TOMAS ACUM.', 'PROGRESO']],
       body,
       headStyles: { fillColor: [13, 115, 119], fontWeight: 'bold' },
@@ -364,10 +386,11 @@ export default function App() {
 
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-         <Pill size={48} className="animate-spin" style={{ color: 'var(--primary-light)' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
+         <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ width: '96px', height: '96px', objectFit: 'contain', animation: 'pulse 1.5s ease-in-out infinite', filter: 'drop-shadow(0 0 20px rgba(15,224,224,0.7))' }} />
          <h1 style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-1px' }}>
            <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
+           <span style={{ fontSize: '1rem', opacity: 0.5, marginLeft: '6px' }}>TRACKER</span>
          </h1>
       </div>
       <p style={{ color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.7rem' }}>Cargando Panel...</p>
@@ -377,10 +400,11 @@ export default function App() {
   if (!user) return (
     <div style={{ minHeight: '100svh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)', padding: '20px' }}>
       <div className="card" style={{ maxWidth: '420px', width: '100%', textAlign: 'center', padding: '36px 28px' }}>
-        <div className="logo" style={{ justifyContent: 'center', marginBottom: '40px', fontSize: '2rem' }}>
-          <Pill size={44} style={{ color: 'var(--primary-light)' }} /> 
-          <span style={{ fontWeight: 900, letterSpacing: '-1px' }}>
+        <div className="logo" style={{ justifyContent: 'center', marginBottom: '28px', flexDirection: 'column', gap: '12px' }}>
+          <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ width: '90px', height: '90px', objectFit: 'contain', filter: 'drop-shadow(0 0 16px rgba(15,224,224,0.6))' }} />
+          <span style={{ fontWeight: 900, letterSpacing: '-1px', fontSize: '1.5rem' }}>
             <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
+            <span style={{ fontSize: '0.9rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
           </span>
         </div>
         <h2 style={{ marginBottom: '8px', fontWeight: 800, fontSize: '1.5rem' }}>
@@ -433,8 +457,8 @@ export default function App() {
       <audio ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
 
       <header className="header">
-        <div className="logo" style={{ fontSize: '1.4rem' }}>
-          <Pill className="w-6 h-6" style={{ color: 'var(--primary-light)' }} />
+        <div className="logo" style={{ fontSize: '1.4rem', gap: '10px' }}>
+          <img src="/logo.svg" alt="ERGOMEDI-TRACKER" style={{ height: '38px', width: '38px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
           <span style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>
             <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
             <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
