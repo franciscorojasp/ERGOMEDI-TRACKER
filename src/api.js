@@ -65,6 +65,18 @@ export const api = {
     }
   },
 
+  async deleteHistoryLog(logId, userId) {
+    return this.jsonp('deleteHistoryLog', { logId, userId });
+  },
+
+  async editHistoryLog(logId, timestamp, date, userId) {
+    return this.jsonp('editHistoryLog', { logId, timestamp, date, userId });
+  },
+
+  async addManualHistoryLog(log, userId) {
+    return this.jsonp('addManualHistoryLog', { data: JSON.stringify(log), userId });
+  },
+
   async uploadPrescription(file, userId) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

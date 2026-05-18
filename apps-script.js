@@ -182,6 +182,138 @@ function doGet(e) {
     result = { success: true };
   }
 
+  // ---------- ADD MANUAL HISTORY LOG ----------
+  else if (action === 'addManualHistoryLog' && userId) {
+    var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
+    var log      = JSON.parse(e.parameter.data);
+    log.id       = Utilities.getUuid();
+    log.userId   = userId;
+    var headers5 = historySheet.getDataRange().getValues()[0];
+    var row5     = headers5.map(function(h) { return log[h] || ''; });
+    historySheet.appendRow(row5);
+    
+    // Increment dosesTaken and takenTodayCount in medications sheet!
+    var medId = log.medId;
+    var logDate = log.date;
+    if (medId) {
+      var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
+      var medsData = medsSheet.getDataRange().getValues();
+      for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
+        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+          var dosesTaken = parseInt(medsData[mIdx][9]) || 0;
+          var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
+          var lastResetDate = medsData[mIdx][11];
+          
+          dosesTaken = dosesTaken + 1;
+          medsSheet.getRange(mIdx + 1, 10).setValue(dosesTaken);
+          
+          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : String(lastResetDate).split('T')[0];
+          var logDateStr = logDate instanceof Date ? logDate.toISOString().split('T')[0] : String(logDate).split('T')[0];
+          
+          if (logDateStr === lastResetDateStr) {
+            takenTodayCount = takenTodayCount + 1;
+            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+          }
+          break;
+        }
+      }
+    }
+    result = { success: true };
+  }
+
+  // ---------- EDIT HISTORY LOG ----------
+  else if (action === 'editHistoryLog' && userId) {
+    var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
+    var historyData  = historySheet.getDataRange().getValues();
+    var logId = e.parameter.logId;
+    var newTimestamp = e.parameter.timestamp;
+    var newDate = e.parameter.date;
+    
+    var medId = null;
+    var oldDate = null;
+    
+    for (var hIdx = 1; hIdx < historyData.length; hIdx++) {
+      if (historyData[hIdx][0] == logId && historyData[hIdx][1] == userId) {
+        medId = historyData[hIdx][2];
+        oldDate = historyData[hIdx][6];
+        
+        historySheet.getRange(hIdx + 1, 6).setValue(new Date(newTimestamp)); // timestamp
+        historySheet.getRange(hIdx + 1, 7).setValue(newDate); // date
+        break;
+      }
+    }
+    
+    // Adjust takenTodayCount if moving to/from today
+    if (medId && oldDate && oldDate !== newDate) {
+      var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
+      var medsData = medsSheet.getDataRange().getValues();
+      for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
+        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+          var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
+          var lastResetDate = medsData[mIdx][11];
+          
+          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : String(lastResetDate).split('T')[0];
+          var oldDateStr = oldDate instanceof Date ? Utilities.formatDate(oldDate, 'UTC', 'yyyy-MM-dd') : String(oldDate).split('T')[0];
+          var newDateStr = String(newDate).split('T')[0];
+          
+          if (oldDateStr === lastResetDateStr && newDateStr !== lastResetDateStr) {
+            takenTodayCount = Math.max(0, takenTodayCount - 1);
+            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+          } else if (oldDateStr !== lastResetDateStr && newDateStr === lastResetDateStr) {
+            takenTodayCount = takenTodayCount + 1;
+            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+          }
+          break;
+        }
+      }
+    }
+    result = { success: true };
+  }
+
+  // ---------- DELETE HISTORY LOG ----------
+  else if (action === 'deleteHistoryLog' && userId) {
+    var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
+    var historyData  = historySheet.getDataRange().getValues();
+    var logId = e.parameter.logId;
+    var medId = null;
+    var logDate = null;
+    
+    for (var hIdx = historyData.length - 1; hIdx >= 1; hIdx--) {
+      if (historyData[hIdx][0] == logId && historyData[hIdx][1] == userId) {
+        medId = historyData[hIdx][2];
+        logDate = historyData[hIdx][6];
+        historySheet.deleteRow(hIdx + 1);
+        break;
+      }
+    }
+    
+    // Decrement dosesTaken and takenTodayCount
+    if (medId) {
+      var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
+      var medsData = medsSheet.getDataRange().getValues();
+      for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
+        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+          var dosesTaken = parseInt(medsData[mIdx][9]) || 0;
+          var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
+          var lastResetDate = medsData[mIdx][11];
+          
+          dosesTaken = Math.max(0, dosesTaken - 1);
+          medsSheet.getRange(mIdx + 1, 10).setValue(dosesTaken);
+          
+          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : String(lastResetDate).split('T')[0];
+          var logDateStr = logDate instanceof Date ? Utilities.formatDate(logDate, 'UTC', 'yyyy-MM-dd') : String(logDate).split('T')[0];
+          
+          if (logDateStr === lastResetDateStr) {
+            takenTodayCount = Math.max(0, takenTodayCount - 1);
+            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+          }
+          break;
+        }
+      }
+    }
+    result = { success: true };
+  }
+
   // ---------- GET MEDS ----------
   else if (action === 'getMeds' && userId) {
     var sheet6      = ss.getSheetByName(MEDS_SHEET_NAME);
@@ -274,15 +406,10 @@ function doPost(e) {
 // ==========================================================
 // checkAndSendAlerts - Ejecutar cada minuto con un trigger
 //
-// CORRECCION DE TIMEZONE:
-//   Cada usuario almacena su utcOffset (minutos respecto a UTC).
-//   Ejemplo: Venezuela UTC-4 -> utcOffset = -240
-//   El cliente envia: -new Date().getTimezoneOffset()
-//
-//   Para obtener la hora local del usuario:
-//     localMs = Date.now() + utcOffset * 60000
-//   Luego formateamos como "HH:MM" usando el formateador UTC
-//   (porque ya aplicamos el offset manualmente).
+// CORRECCION DE TIMEZONE Y TRATAMIENTOS CULMINADOS:
+//   - Omite el envío de notificaciones para tratamientos culminados.
+//   - Almacena una caché global de deduplicación con marcas de tiempo absolutas
+//     ('sent_alerts_cache') inmune a desfases de cambio de día UTC / local.
 // ==========================================================
 function checkAndSendAlerts() {
   var ss          = SpreadsheetApp.getActiveSpreadsheet();
@@ -292,13 +419,21 @@ function checkAndSendAlerts() {
   var medsData    = medsSheet.getDataRange().getValues();
 
   var nowUtcMs = Date.now();
-  var todayUtc = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
 
-  // Anti-duplicate cache (se resetea diariamente)
-  var props    = PropertiesService.getScriptProperties();
-  var cacheKey = 'alerts_sent_' + todayUtc;
+  // Caché de deduplicación absoluta (inmune a fronteras de zona horaria)
+  var props      = PropertiesService.getScriptProperties();
+  var cacheKey   = 'sent_alerts_cache';
   var sentAlerts = {};
   try { sentAlerts = JSON.parse(props.getProperty(cacheKey) || '{}'); } catch(e) {}
+
+  // Pruning: remover registros más viejos de 30 horas para evitar el desbordamiento de ScriptProperties
+  var prunedAlerts = {};
+  for (var k in sentAlerts) {
+    if (nowUtcMs - sentAlerts[k] < 30 * 60 * 60 * 1000) {
+      prunedAlerts[k] = sentAlerts[k];
+    }
+  }
+  sentAlerts = prunedAlerts;
 
   function addMinutes(timeStr, mins) {
     var parts = timeStr.split(':');
@@ -335,6 +470,15 @@ function checkAndSendAlerts() {
       if (processedMeds[medKey]) continue; // Skip duplicates
       processedMeds[medKey] = true;
 
+      // Omitir medicamentos con el plan ya culminado
+      var timesPerDay  = parseInt(medsData[med][5]) || 0;
+      var durationDays = parseInt(medsData[med][6]) || 0;
+      var dosesTaken   = parseInt(medsData[med][9]) || 0;
+      var totalNeeded  = timesPerDay * durationDays;
+      if (totalNeeded > 0 && dosesTaken >= totalNeeded) {
+        continue; // Tratamiento culminado, no alertar
+      }
+
       var times   = [];
       try { times = JSON.parse(medsData[med][4] || '[]'); } catch(e) {}
 
@@ -350,7 +494,6 @@ function checkAndSendAlerts() {
           var alert = alerts[a];
           if (alert.triggerTime !== nowHHMM) continue;
 
-          // Clave unica de alerta (ignora medId real para evitar duplicados si hay rows clonadas)
           var dedupeKey = userId + '_' + medKey + '_' + scheduledTime + '_' + alert.offset;
           if (sentAlerts[dedupeKey]) continue;
 
@@ -363,24 +506,24 @@ function checkAndSendAlerts() {
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
-                      'Prepara tu medicacion con anticipacion.\n\n-- ERGOMEDI-TRACKER';
-            waMsg   = '(10 min) ' + greeting + ' En 10 minutos debes tomar *' + medName + '* (' + dosage + ') a las ' + scheduledTime + '. !Preparala!';
+                      'Prepara tu medicación con anticipación.\n\n-- ERGOMEDI-TRACKER';
+            waMsg   = '(10 min) ' + greeting + ' En 10 minutos debes tomar *' + medName + '* (' + dosage + ') a las ' + scheduledTime + '. ¡Prepárala!';
           } else if (alert.offset === -5) {
             subject = '[5 min] ' + medName;
             body    = greeting + '\n\nEn 5 minutos es hora de tomar:\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
-                      'No lo olvides!\n\n-- ERGOMEDI-TRACKER';
+                      '¡No lo olvides!\n\n-- ERGOMEDI-TRACKER';
             waMsg   = '(5 min) Faltan 5 minutos para tomar *' + medName + '* (' + dosage + ').';
           } else {
             subject = '[AHORA] ' + medName;
-            body    = greeting + '\n\nEs el momento de tu medicamento!\n\n' +
+            body    = greeting + '\n\n¡Es el momento de tu medicamento!\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
                       'Abre ERGOMEDI-TRACKER y confirma la toma.\n\n-- ERGOMEDI-TRACKER';
-            waMsg   = '(!ES HORA! ERGOMEDI): ' + greeting + ' Toma tu dosis de *' + medName + '* (' + dosage + ') ahora mismo.';
+            waMsg   = '(¡ES HORA! ERGOMEDI): ' + greeting + ' Toma tu dosis de *' + medName + '* (' + dosage + ') ahora mismo.';
           }
 
           // Email (canal principal)
@@ -391,7 +534,8 @@ function checkAndSendAlerts() {
           // WhatsApp via CallMeBot (canal secundario)
           if (phone && apiKey) sendWhatsAppMessage(phone, waMsg, apiKey);
 
-          sentAlerts[dedupeKey] = true;
+          // Almacenar el timestamp de envío en la caché
+          sentAlerts[dedupeKey] = nowUtcMs;
         }
       }
     }
@@ -399,9 +543,6 @@ function checkAndSendAlerts() {
 
   // Guardar cache
   props.setProperty(cacheKey, JSON.stringify(sentAlerts));
-  // Limpiar cache del dia anterior
-  var yesterday = Utilities.formatDate(new Date(nowUtcMs - 86400000), 'UTC', 'yyyy-MM-dd');
-  props.deleteProperty('alerts_sent_' + yesterday);
 }
 
 function sendWhatsAppMessage(phone, text, apiKey) {

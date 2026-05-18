@@ -4,7 +4,8 @@ import {
   Calendar, AlertCircle, Settings, X, Save, FileText, 
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
-  Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield
+  Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield,
+  Globe, Check
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -61,8 +62,26 @@ export default function App() {
   };
   const [formData, setFormData] = useState(initialFormState);
 
+  // Modals de historial
+  const [showEditHistoryModal, setShowEditHistoryModal] = useState(false);
+  const [editingHistoryLog, setEditingHistoryLog] = useState(null);
+  const [editHistoryDate, setEditHistoryDate] = useState("");
+  const [editHistoryTime, setEditHistoryTime] = useState("");
+
+  const [showManualLogModal, setShowManualLogModal] = useState(false);
+  const [manualLogMedId, setManualLogMedId] = useState("");
+  const [manualLogDate, setManualLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualLogTime, setManualLogTime] = useState("");
+
   useEffect(() => {
-    if (user?.id) fetchData(user.id, true);
+    if (user?.id) {
+      fetchData(user.id, true);
+      // Auto-TimeZone Sync
+      const currentOffset = -new Date().getTimezoneOffset();
+      if (user.utcOffset !== currentOffset) {
+        updateProfile({ utcOffset: currentOffset }, true);
+      }
+    }
     else setLoading(false);
   }, [user?.id]);
 
@@ -70,6 +89,93 @@ export default function App() {
   const localToday = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const groupHistoryLogs = (logs) => {
+    const todayStr = localToday();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+    // Inline robust date normalizer to handle both ISO and standard Sheets formatting
+    const normalizeHistoryDate = (dateVal, timestampVal) => {
+      // 1. If dateVal or timestampVal is a full ISO timestamp string, parse it using Date
+      const isoStr = (dateVal && typeof dateVal === 'string' && dateVal.includes('T')) ? dateVal :
+                      (timestampVal && typeof timestampVal === 'string' && timestampVal.includes('T')) ? timestampVal : null;
+      if (isoStr) {
+        const d = new Date(isoStr);
+        if (!isNaN(d)) {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+      }
+
+      // 2. Already plain date string "YYYY-MM-DD"
+      if (dateVal && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+        return dateVal;
+      }
+
+      // 3. Parsable non-standard date string in dateVal
+      if (dateVal && typeof dateVal === 'string') {
+        const parts = dateVal.split(/[-/]/);
+        if (parts.length === 3) {
+          if (parts[0].length <= 2 && parts[2].length === 4) {
+            return `${parts[2]}-${String(parts[1]).padStart(2, '0')}-${String(parts[0]).padStart(2, '0')}`;
+          }
+          if (parts[0].length === 4) {
+            return `${parts[0]}-${String(parts[1]).padStart(2, '0')}-${String(parts[2].split('T')[0]).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      // 4. Fallback parser for timestampVal
+      if (timestampVal) {
+        const d = new Date(timestampVal);
+        if (!isNaN(d)) {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        if (typeof timestampVal === 'string') {
+          const parts = timestampVal.split(' ')[0].split(/[-/]/);
+          if (parts.length === 3) {
+            if (parts[0].length <= 2 && parts[2].length === 4) {
+              return `${parts[2]}-${String(parts[1]).padStart(2, '0')}-${String(parts[0]).padStart(2, '0')}`;
+            }
+            if (parts[0].length === 4) {
+              return `${parts[0]}-${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+            }
+          }
+        }
+      }
+      return todayStr;
+    };
+
+    const groups = {};
+    (logs || []).forEach(log => {
+      let dateKey = normalizeHistoryDate(log.date, log.timestamp);
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(log);
+    });
+
+    return Object.keys(groups)
+      .sort((a, b) => b.localeCompare(a))
+      .map(dateKey => {
+        let label = "";
+        if (dateKey === todayStr) {
+          label = "HOY";
+        } else if (dateKey === yesterdayStr) {
+          label = "AYER";
+        } else {
+          const [yr, mo, dy] = dateKey.split('-').map(Number);
+          const d = new Date(yr, mo - 1, dy);
+          label = isNaN(d) ? dateKey : d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+        }
+        return {
+          dateKey,
+          label,
+          logs: groups[dateKey].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        };
+      });
   };
 
   // Auto-reset at local midnight (Venezuela UTC-4 and any timezone)
@@ -151,7 +257,11 @@ export default function App() {
 
       setMeds(deduped);
       setHistoryLogs(historyList || []);
-      if (deduped.length) setupNotifications(deduped);
+      const activePlansForNotifications = deduped.filter(m => {
+        const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
+        return (m.dosesTaken || 0) < totalNeeded;
+      });
+      if (activePlansForNotifications.length) setupNotifications(activePlansForNotifications);
     } catch (err) {
       console.error("Sync error:", err);
     } finally {
@@ -306,9 +416,9 @@ export default function App() {
     }
   };
 
-  const updateProfile = async (profileData) => {
+  const updateProfile = async (profileData, silent = false) => {
     if (!user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await api.updateProfile(user.id, profileData);
       if (res.success) {
@@ -317,7 +427,85 @@ export default function App() {
         localStorage.setItem('ergomedi_user', JSON.stringify(updatedUser));
       }
     } catch (err) {
-      setErrorMessage("Error al actualizar perfil.");
+      if (!silent) setErrorMessage("Error al actualizar perfil.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const deleteHistoryLog = async (logId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este registro de toma? Esto recalculará las dosis tomadas del plan.")) return;
+    setLoading(true);
+    try {
+      await api.deleteHistoryLog(logId, user.id);
+      await fetchData(user.id);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage("Error al eliminar la toma del historial.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openEditHistoryModal = (log) => {
+    setEditingHistoryLog(log);
+    setEditHistoryDate(log.date || log.timestamp.split('T')[0]);
+    const d = new Date(log.timestamp);
+    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    setEditHistoryTime(timeStr);
+    setShowEditHistoryModal(true);
+  };
+
+  const saveEditHistory = async (e) => {
+    e.preventDefault();
+    if (!editingHistoryLog || !editHistoryDate || !editHistoryTime) return;
+    setLoading(true);
+    try {
+      const [yr, mo, dy] = editHistoryDate.split('-').map(Number);
+      const [h, m] = editHistoryTime.split(':').map(Number);
+      const newDate = new Date(yr, mo - 1, dy, h, m);
+      const newTimestamp = newDate.toISOString();
+
+      await api.editHistoryLog(editingHistoryLog.id, newTimestamp, editHistoryDate, user.id);
+      setShowEditHistoryModal(false);
+      setEditingHistoryLog(null);
+      await fetchData(user.id);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage("Error al guardar los cambios en la toma.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveManualHistoryLog = async (e) => {
+    e.preventDefault();
+    if (!manualLogMedId || !manualLogDate || !manualLogTime) return;
+    const med = meds.find(m => m.id === manualLogMedId);
+    if (!med) return;
+    setLoading(true);
+    try {
+      const [yr, mo, dy] = manualLogDate.split('-').map(Number);
+      const [h, m] = manualLogTime.split(':').map(Number);
+      const newDate = new Date(yr, mo - 1, dy, h, m);
+      const newTimestamp = newDate.toISOString();
+
+      const log = {
+        medId: med.id,
+        medName: med.name,
+        dosage: med.dosage,
+        timestamp: newTimestamp,
+        date: manualLogDate
+      };
+
+      await api.addManualHistoryLog(log, user.id);
+      setShowManualLogModal(false);
+      setManualLogMedId("");
+      setManualLogTime("");
+      await fetchData(user.id);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage("Error al registrar la toma manual.");
     } finally {
       setLoading(false);
     }
@@ -699,203 +887,301 @@ export default function App() {
             </div>
 
             <div className="meds-grid">
-              {meds.map(med => {
-              const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
-              const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
-              
-              const today = localToday(); // local date, not UTC
-              const takenToday = med.lastResetDate === today ? (med.takenTodayCount || 0) : 0;
-              const isDoneToday = takenToday >= (med.timesPerDay || 1);
-
-              return (
-                <div key={med.id} className="card animate-fade" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                         <Pill size={16} style={{ color: 'var(--primary-light)' }} />
-                         <h3 style={{ fontWeight: 900, fontSize: '1.1rem' }}>{med.name.toUpperCase()}</h3>
-                      </div>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{med.dosage} • {med.timesPerDay} veces al día</p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '14px' }}>
-                       <Share2 size={18} onClick={() => shareReportWhatsApp(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Compartir por WhatsApp" />
-                       <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Descargar PDF" />
-                       <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
-                       <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
-                    </div>
-                  </div>
+              {(() => {
+                const sortedMeds = [...meds].sort((a, b) => {
+                  const totalA = (a.durationDays || 0) * (a.timesPerDay || 1);
+                  const isCompletedA = (a.dosesTaken || 0) >= totalA;
+                  const totalB = (b.durationDays || 0) * (b.timesPerDay || 1);
+                  const isCompletedB = (b.dosesTaken || 0) >= totalB;
+                  if (isCompletedA && !isCompletedB) return 1;
+                  if (!isCompletedA && isCompletedB) return -1;
+                  return 0;
+                });
+                return sortedMeds.map(med => {
+                  const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
+                  const isCompleted = (med.dosesTaken || 0) >= totalNeeded;
+                  const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
                   
-                  {med.prescriptionUrl && (
-                    <div style={{ marginBottom: '20px', borderRadius: '16px', overflow: 'hidden', height: '120px', border: '1px solid var(--border)', background: 'var(--bg-main)', position: 'relative' }}>
-                       <img 
-                         src={getDriveImageUrl(med.prescriptionUrl)} 
-                         alt="Receta" 
-                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                         onClick={() => window.open(med.prescriptionUrl, '_blank')}
-                       />
-                       <div style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '8px', fontSize: '0.6rem', color: 'white', fontWeight: 700 }}>
-                          VER RECETA
-                       </div>
-                    </div>
-                  )}
+                  const today = localToday(); // local date, not UTC
+                  const takenToday = med.lastResetDate === today ? (med.takenTodayCount || 0) : 0;
+                  const isDoneToday = takenToday >= (med.timesPerDay || 1);
 
-                  {/* Indicador visual de tomas diarias */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                    {Array.from({ length: med.timesPerDay || 1 }).map((_, i) => (
-                      <div 
-                        key={i} 
-                        style={{ 
-                          width: '12px', 
-                          height: '12px', 
-                          borderRadius: '50%', 
-                          background: i < takenToday ? 'var(--primary-light)' : 'var(--bg-main)',
-                          border: i < takenToday ? 'none' : '2px solid var(--border)',
-                          boxShadow: i < takenToday ? '0 0 10px var(--primary-light)' : 'none'
-                        }} 
-                      />
-                    ))}
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, marginLeft: '8px', textTransform: 'uppercase' }}>
-                      {takenToday} de {med.timesPerDay} hoy
-                    </span>
-                  </div>
-
-                  {/* Horarios de tomas */}
-                  {Array.isArray(med.times) && med.times.length > 0 && (() => {
-                    const nowTime = new Date();
-                    const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
-                    // Find index of next upcoming dose
-                    const nextIdx = med.times.findIndex(t => {
-                      const [h, m] = t.split(':').map(Number);
-                      return (h * 60 + m) > nowMins;
-                    });
-                    return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
-                        {med.times.map((t, i) => {
-                          const [h, m] = t.split(':').map(Number);
-                          const chipMins = h * 60 + m;
-                          const isPast   = chipMins < nowMins;
-                          const isNext   = i === nextIdx;
-                          const isTaken  = i < takenToday;
-                          // Format to 12h
-                          const label = new Date(2000, 0, 1, h, m)
-                            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-                          return (
-                            <div key={i} style={{
-                              display: 'flex', alignItems: 'center', gap: '4px',
-                              padding: '4px 10px',
-                              borderRadius: '20px',
-                              fontSize: '0.68rem',
-                              fontWeight: 800,
-                              border: isNext
-                                ? '1.5px solid var(--primary-light)'
-                                : isTaken
-                                  ? '1.5px solid var(--primary)'
-                                  : '1.5px solid var(--border)',
-                              background: isNext
-                                ? 'var(--primary-dim)'
-                                : isTaken
-                                  ? 'rgba(13,115,119,0.15)'
-                                  : 'var(--bg-main)',
-                              color: isNext
-                                ? 'var(--primary-light)'
-                                : isTaken
-                                  ? 'var(--primary-light)'
-                                  : 'var(--text-muted)',
-                              opacity: isPast && !isTaken ? 0.5 : 1,
-                            }}>
-                              {isTaken && <CheckCircle2 size={10} />}
-                              {isNext && !isTaken && <Clock size={10} />}
-                              {label}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-
-                  <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
-                    <div className="progress-bar" style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)' }}>
-                    <span style={{ color: 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
-                    <span>{med.dosesTaken} / {totalNeeded} TOMAS TOTALES</span>
-                  </div>
-                  {/* Action buttons row */}
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px', alignItems: 'stretch' }}>
-                    <button 
-                      disabled={isDoneToday} 
-                      onClick={() => markAsTaken(med)} 
-                      className="btn-primary" 
-                      style={{ 
-                        flex: 1,
-                        height: '52px', 
-                        background: isDoneToday
-                          ? 'linear-gradient(135deg, rgba(13,115,119,0.15), rgba(13,115,119,0.25))'
-                          : 'var(--primary)', 
-                        color: isDoneToday ? 'var(--primary-light)' : 'white', 
-                        border: isDoneToday ? '1.5px solid var(--primary)' : 'none',
-                        opacity: isDoneToday ? 0.9 : 1,
-                        cursor: isDoneToday ? 'default' : 'pointer',
-                      }}
-                    >
-                      {isDoneToday ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 900 }}>
-                          <CheckCircle2 size={18} /> DOSIS COMPLETADAS
+                  return (
+                    <div key={med.id} className="card animate-fade" style={{ padding: '24px', opacity: isCompleted ? 0.85 : 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                             <Pill size={16} style={{ color: isCompleted ? '#10b981' : 'var(--primary-light)' }} />
+                             <h3 style={{ fontWeight: 900, fontSize: '1.1rem', textDecoration: isCompleted ? 'line-through' : 'none', opacity: isCompleted ? 0.6 : 1 }}>{med.name.toUpperCase()}</h3>
+                             {isCompleted && (
+                               <span style={{ 
+                                 background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', 
+                                 color: 'white', 
+                                 fontSize: '0.65rem', 
+                                 padding: '2px 8px', 
+                                 borderRadius: '12px', 
+                                 fontWeight: 900,
+                                 boxShadow: '0 0 10px rgba(16,185,129,0.3)',
+                                 letterSpacing: '0.5px'
+                               }}>
+                                 CULMINADO
+                               </span>
+                             )}
+                          </div>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{med.dosage} • {med.timesPerDay} veces al día</p>
                         </div>
-                      ) : (
-                        `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
+                        <div style={{ display: 'flex', gap: '14px' }}>
+                           <Share2 size={18} onClick={() => shareReportWhatsApp(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Compartir por WhatsApp" />
+                           <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Descargar PDF" />
+                           <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
+                           <Trash2 size={18} onClick={() => deleteMed(med.id)} style={{ cursor: 'pointer', color: '#ef4444' }} />
+                        </div>
+                      </div>
+                      
+                      {med.prescriptionUrl && (
+                        <div style={{ marginBottom: '20px', borderRadius: '16px', overflow: 'hidden', height: '120px', border: '1px solid var(--border)', background: 'var(--bg-main)', position: 'relative' }}>
+                           <img 
+                             src={getDriveImageUrl(med.prescriptionUrl)} 
+                             alt="Receta" 
+                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                             onClick={() => window.open(med.prescriptionUrl, '_blank')}
+                           />
+                           <div style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', padding: '4px 8px', borderRadius: '8px', fontSize: '0.6rem', color: 'white', fontWeight: 700 }}>
+                              VER RECETA
+                           </div>
+                        </div>
                       )}
-                    </button>
 
-                    {/* Undo button — only visible when at least 1 dose was logged today */}
-                    {takenToday > 0 && (
-                      <button
-                        onClick={() => undoLastDose(med)}
-                        title="Deshacer última toma registrada"
-                        style={{
-                          height: '52px',
-                          width: '52px',
-                          flexShrink: 0,
-                          background: 'transparent',
-                          border: '1.5px solid var(--border)',
-                          borderRadius: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                          color: 'var(--text-muted)',
-                          transition: 'border-color 0.2s, color 0.2s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                      >
-                        <RotateCcw size={18} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                      {/* Indicador visual de tomas diarias */}
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                        {Array.from({ length: med.timesPerDay || 1 }).map((_, i) => (
+                          <div 
+                            key={i} 
+                            style={{ 
+                              width: '12px', 
+                              height: '12px', 
+                              borderRadius: '50%', 
+                              background: i < takenToday ? 'var(--primary-light)' : 'var(--bg-main)',
+                              border: i < takenToday ? 'none' : '2px solid var(--border)',
+                              boxShadow: i < takenToday ? '0 0 10px var(--primary-light)' : 'none'
+                            }} 
+                          />
+                        ))}
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 800, marginLeft: '8px', textTransform: 'uppercase' }}>
+                          {takenToday} de {med.timesPerDay} hoy
+                        </span>
+                      </div>
+
+                      {/* Horarios de tomas */}
+                      {Array.isArray(med.times) && med.times.length > 0 && (() => {
+                        const nowTime = new Date();
+                        const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+                        // Find index of next upcoming dose
+                        const nextIdx = med.times.findIndex(t => {
+                          const [h, m] = t.split(':').map(Number);
+                          return (h * 60 + m) > nowMins;
+                        });
+                        return (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+                            {med.times.map((t, i) => {
+                              const [h, m] = t.split(':').map(Number);
+                              const chipMins = h * 60 + m;
+                              const isPast   = chipMins < nowMins;
+                              const isNext   = i === nextIdx;
+                              const isTaken  = i < takenToday;
+                              // Format to 12h
+                              const label = new Date(2000, 0, 1, h, m)
+                                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+                              return (
+                                <div key={i} style={{
+                                  display: 'flex', alignItems: 'center', gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: '20px',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  border: isNext
+                                    ? '1.5px solid var(--primary-light)'
+                                    : isTaken
+                                      ? '1.5px solid var(--primary)'
+                                      : '1.5px solid var(--border)',
+                                  background: isNext
+                                    ? 'var(--primary-dim)'
+                                    : isTaken
+                                      ? 'rgba(13,115,119,0.15)'
+                                      : 'var(--bg-main)',
+                                  color: isNext
+                                    ? 'var(--primary-light)'
+                                    : isTaken
+                                      ? 'var(--primary-light)'
+                                      : 'var(--text-muted)',
+                                  opacity: isPast && !isTaken ? 0.5 : 1,
+                                }}>
+                                  {isTaken && <CheckCircle2 size={10} />}
+                                  {isNext && !isTaken && <Clock size={10} />}
+                                  {label}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      <div className="progress-container" style={{ height: '10px', background: 'var(--bg-main)', marginBottom: '12px' }}>
+                        <div className="progress-bar" style={{ width: `${progress}%`, background: isCompleted ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' : 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)' }}></div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)' }}>
+                        <span style={{ color: isCompleted ? '#10b981' : 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
+                        <span>{med.dosesTaken} / {totalNeeded} TOMAS TOTALES</span>
+                      </div>
+                      {/* Action buttons row */}
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '20px', alignItems: 'stretch' }}>
+                        <button 
+                          disabled={isCompleted || isDoneToday} 
+                          onClick={() => markAsTaken(med)} 
+                          className="btn-primary" 
+                          style={{ 
+                            flex: 1,
+                            height: '52px', 
+                            background: isCompleted
+                              ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.25))'
+                              : isDoneToday
+                                ? 'linear-gradient(135deg, rgba(13,115,119,0.15), rgba(13,115,119,0.25))'
+                                : 'var(--primary)', 
+                            color: isCompleted ? '#10b981' : isDoneToday ? 'var(--primary-light)' : 'white', 
+                            border: isCompleted 
+                              ? '1.5px solid #10b981' 
+                              : isDoneToday 
+                                ? '1.5px solid var(--primary)' 
+                                : 'none',
+                            opacity: (isCompleted || isDoneToday) ? 0.9 : 1,
+                            cursor: (isCompleted || isDoneToday) ? 'default' : 'pointer',
+                          }}
+                        >
+                          {isCompleted ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 900 }}>
+                              <CheckCircle2 size={18} style={{ color: '#10b981' }} /> TRATAMIENTO CULMINADO
+                            </div>
+                          ) : isDoneToday ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 900 }}>
+                              <CheckCircle2 size={18} /> DOSIS COMPLETADAS
+                            </div>
+                          ) : (
+                            `CONFIRMAR TOMA ${takenToday + 1} de ${med.timesPerDay}`
+                          )}
+                        </button>
+
+                        {/* Undo button — only visible when at least 1 dose was logged today and not completed */}
+                        {takenToday > 0 && !isCompleted && (
+                          <button
+                            onClick={() => undoLastDose(med)}
+                            title="Deshacer última toma registrada"
+                            style={{
+                              height: '52px',
+                              width: '52px',
+                              flexShrink: 0,
+                              background: 'transparent',
+                              border: '1.5px solid var(--border)',
+                              borderRadius: '14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              color: 'var(--text-muted)',
+                              transition: 'border-color 0.2s, color 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                          >
+                            <RotateCcw size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </>
         ) : activeTab === 'historial' ? (
           <div className="animate-fade">
-            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px' }}>HISTORIAL</h2>
-            {historyLogs.map(log => (
-              <div key={log.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', padding: '20px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                  <CheckCircle2 size={22} style={{ color: 'var(--primary-light)' }} />
-                  <div>
-                    <h4 style={{ fontWeight: 900, fontSize: '0.95rem' }}>{log.medName.toUpperCase()}</h4>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.dosage}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: 900 }}>HISTORIAL</h2>
+              <button 
+                onClick={() => {
+                  if (meds.length === 0) {
+                    alert("Primero debes agregar al menos un plan de medicamento.");
+                    return;
+                  }
+                  setManualLogMedId(meds[0].id);
+                  setManualLogDate(localToday());
+                  const now = new Date();
+                  setManualLogTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+                  setShowManualLogModal(true);
+                }} 
+                className="btn-primary" 
+                style={{ height: '40px', fontSize: '0.75rem', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }}
+              >
+                <Plus size={16} /> TOMA MANUAL
+              </button>
+            </div>
+
+            {historyLogs.length === 0 ? (
+              <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Clock size={40} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
+                <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>No hay tomas registradas en el historial.</p>
+              </div>
+            ) : (
+              groupHistoryLogs(historyLogs).map(group => (
+                <div key={group.dateKey} style={{ marginBottom: '24px' }}>
+                  <div style={{ 
+                    fontSize: '0.7rem', 
+                    fontWeight: 900, 
+                    color: 'var(--primary-light)', 
+                    letterSpacing: '1.5px', 
+                    marginBottom: '12px', 
+                    borderBottom: '1px solid var(--border)', 
+                    paddingBottom: '6px'
+                  }}>
+                    {group.label}
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {group.logs.map(log => (
+                      <div key={log.id} className="card animate-fade" style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 20px', alignItems: 'center', margin: 0 }}>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                          <CheckCircle2 size={20} style={{ color: 'var(--primary-light)' }} />
+                          <div>
+                            <h4 style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text)' }}>{log.medName.toUpperCase()}</h4>
+                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700 }}>{log.dosage}</p>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <p style={{ fontWeight: 900, fontSize: '0.8rem', color: 'var(--primary-light)' }}>
+                              {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true})}
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', borderLeft: '1px solid var(--border)', paddingLeft: '16px' }}>
+                            <Pencil 
+                              size={16} 
+                              onClick={() => openEditHistoryModal(log)} 
+                              style={{ cursor: 'pointer', color: 'var(--text-muted)' }} 
+                              title="Editar fecha/hora"
+                            />
+                            <Trash2 
+                              size={16} 
+                              onClick={() => deleteHistoryLog(log.id)} 
+                              style={{ cursor: 'pointer', color: '#ef4444' }} 
+                              title="Eliminar toma"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--primary-light)' }}>{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{new Date(log.timestamp).toLocaleDateString()}</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         ) : (
           <div className="animate-fade">
@@ -912,6 +1198,44 @@ export default function App() {
                </div>
 
                <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                  {/* ── ZONA HORARIA Y CONFIGURACIÓN PREMIUM ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Zona Horaria del Dispositivo</p>
+                    <div style={{ background: 'var(--primary-dim)', border: '1px solid var(--primary-light)', borderRadius: '16px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <Globe size={16} style={{ color: 'var(--primary-light)' }} />
+                          <h4 style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--primary-light)', textTransform: 'uppercase' }}>
+                            {Intl.DateTimeFormat().resolvedOptions().timeZone || 'Detectando...'}
+                          </h4>
+                        </div>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                          Desfase UTC actual: {(() => {
+                            const offsetMinutes = -new Date().getTimezoneOffset();
+                            const hrs = Math.floor(Math.abs(offsetMinutes) / 60);
+                            const mins = Math.abs(offsetMinutes) % 60;
+                            const sign = offsetMinutes >= 0 ? '+' : '-';
+                            return `GMT ${sign}${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+                          })()} (Offset: {user.utcOffset || 0} min)
+                        </p>
+                      </div>
+                      <span style={{ 
+                        background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%)', 
+                        color: 'white', 
+                        fontSize: '0.6rem', 
+                        padding: '4px 10px', 
+                        borderRadius: '12px', 
+                        fontWeight: 900,
+                        boxShadow: '0 0 10px var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <Check size={10} strokeWidth={3} /> AUTOSINCRONIZADO
+                      </span>
+                    </div>
+                  </div>
 
                   {/* ── DATOS DEL PACIENTE ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
@@ -1066,6 +1390,119 @@ export default function App() {
             <button className="pwa-btn-dismiss" onClick={() => setShowInstallBanner(false)}>
               <X size={18} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Manual Log Modal ── */}
+      {showManualLogModal && (
+        <div className="modal-overlay">
+          <div className="modal-box animate-fade">
+            <div className="modal-header">
+              <h3 style={{ fontWeight: 900, fontSize: '1rem' }}>REGISTRAR TOMA MANUAL</h3>
+              <X onClick={() => setShowManualLogModal(false)} size={22} style={{ cursor: 'pointer' }} />
+            </div>
+            <div className="modal-body">
+              <form onSubmit={saveManualHistoryLog} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>MEDICAMENTO</label>
+                  <select 
+                    className="input-field" 
+                    required 
+                    value={manualLogMedId} 
+                    onChange={e => setManualLogMedId(e.target.value)} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--text)' }}
+                  >
+                    {meds.map(med => (
+                      <option key={med.id} value={med.id} style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
+                        {med.name.toUpperCase()} ({med.dosage})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="form-grid">
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>FECHA</label>
+                    <input 
+                      type="date" 
+                      className="input-field" 
+                      required 
+                      value={manualLogDate} 
+                      onChange={e => setManualLogDate(e.target.value)} 
+                      style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                    />
+                  </div>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>HORA</label>
+                    <input 
+                      type="time" 
+                      className="input-field" 
+                      required 
+                      value={manualLogTime} 
+                      onChange={e => setManualLogTime(e.target.value)} 
+                      style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                    />
+                  </div>
+                </div>
+                
+                <button type="submit" className="btn-primary" style={{ height: '48px', fontWeight: 900, marginTop: '8px', fontSize: '0.85rem' }}>
+                  REGISTRAR TOMA
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit History Log Modal ── */}
+      {showEditHistoryModal && editingHistoryLog && (
+        <div className="modal-overlay">
+          <div className="modal-box animate-fade">
+            <div className="modal-header">
+              <h3 style={{ fontWeight: 900, fontSize: '1rem' }}>EDITAR TOMA REGISTRADA</h3>
+              <X onClick={() => { setShowEditHistoryModal(false); setEditingHistoryLog(null); }} size={22} style={{ cursor: 'pointer' }} />
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+                <h4 style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--primary-light)' }}>
+                  {editingHistoryLog.medName.toUpperCase()}
+                </h4>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {editingHistoryLog.dosage}
+                </p>
+              </div>
+              <form onSubmit={saveEditHistory} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-grid">
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>FECHA</label>
+                    <input 
+                      type="date" 
+                      className="input-field" 
+                      required 
+                      value={editHistoryDate} 
+                      onChange={e => setEditHistoryDate(e.target.value)} 
+                      style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                    />
+                  </div>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>HORA</label>
+                    <input 
+                      type="time" 
+                      className="input-field" 
+                      required 
+                      value={editHistoryTime} 
+                      onChange={e => setEditHistoryTime(e.target.value)} 
+                      style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                    />
+                  </div>
+                </div>
+                
+                <button type="submit" className="btn-primary" style={{ height: '48px', fontWeight: 900, marginTop: '8px', fontSize: '0.85rem' }}>
+                  GUARDAR CAMBIOS
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
