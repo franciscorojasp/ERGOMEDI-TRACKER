@@ -36,6 +36,8 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedPathology, setSelectedPathology] = useState('All');
+  const [selectedDoctor, setSelectedDoctor] = useState('All');
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -58,7 +60,9 @@ export default function App() {
     notes: '',
     dosesTaken: 0,
     takenTodayCount: 0,
-    prescriptionUrl: ''
+    prescriptionUrl: '',
+    doctorName: '',
+    pathology: ''
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -246,9 +250,9 @@ export default function App() {
         return acc;
       }, {});
 
-      // Layer 2: deduplicate by name+dosage — catches rows with DIFFERENT ids that are the same plan
+      // Layer 2: deduplicate by name+dosage+doctorName+pathology — catches rows with DIFFERENT ids that are the same plan
       const byName = Object.values(byId).reduce((acc, m) => {
-        const key = `${String(m.name).trim().toLowerCase()}|${String(m.dosage).trim().toLowerCase()}`;
+        const key = `${String(m.name).trim().toLowerCase()}|${String(m.dosage).trim().toLowerCase()}|${String(m.doctorName || '').trim().toLowerCase()}|${String(m.pathology || '').trim().toLowerCase()}`;
         if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) acc[key] = m;
         return acc;
       }, {});
@@ -626,24 +630,25 @@ export default function App() {
     );
 
     // ── TABLE ─────────────────────────────────────────────────────
-    const targetMeds = specificMed ? [specificMed] : meds;
+    const targetMeds = specificMed ? [specificMed] : filteredMeds;
     const body = targetMeds.map(m => [
       m.name.toUpperCase(),
+      m.pathology ? m.pathology.toUpperCase() : 'NO ESP.',
+      m.doctorName ? m.doctorName.toUpperCase() : 'NO ESP.',
       m.dosage || 'N/A',
       Array.isArray(m.times) ? m.times.join(', ') : (m.times || 'N/A'),
-      `${m.dosesTaken || 0} / ${(m.durationDays || 0) * (m.timesPerDay || 1)}`,
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
     docPdf.autoTable({
       startY: BAND_Y + 14,
-      head: [['MEDICAMENTO', 'DOSIS', 'HORARIOS', 'TOMAS ACUM.', 'PROGRESO']],
+      head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'HORARIOS', 'PROGRESO']],
       body,
       headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 8 },
       styles: { fontSize: 8.5, cellPadding: 5 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
-      columnStyles: { 4: { halign: 'center', fontStyle: 'bold' } },
+      columnStyles: { 5: { halign: 'center', fontStyle: 'bold' } },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 4) {
+        if (data.section === 'body' && data.column.index === 5) {
           const textContent = data.cell.text[0] || '0%';
           const percent = Math.min(100, Math.max(0, parseInt(textContent.replace('%', ''), 10) || 0));
           
@@ -739,6 +744,15 @@ export default function App() {
 
   const closeModal = () => { setShowModal(false); setEditingId(null); setFormData(initialFormState); setErrorMessage(""); };
 
+  const openNewPlanModal = () => {
+    setEditingId(null);
+    setFormData({
+      ...initialFormState,
+      doctorName: user?.doctorName || ''
+    });
+    setShowModal(true);
+  };
+
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
@@ -826,6 +840,15 @@ export default function App() {
   );
 
 
+  const uniquePathologies = Array.from(new Set((meds || []).map(m => (m.pathology || '').trim()).filter(Boolean)));
+  const uniqueDoctors = Array.from(new Set((meds || []).map(m => (m.doctorName || '').trim()).filter(Boolean)));
+
+  const filteredMeds = (meds || []).filter(m => {
+    const matchPathology = selectedPathology === 'All' || (m.pathology || '').trim().toLowerCase() === selectedPathology.trim().toLowerCase();
+    const matchDoctor = selectedDoctor === 'All' || (m.doctorName || '').trim().toLowerCase() === selectedDoctor.trim().toLowerCase();
+    return matchPathology && matchDoctor;
+  });
+
   return (
     <div className="animate-fade" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <audio ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
@@ -855,23 +878,92 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                <h2 style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.5px' }}>DASHBOARD</h2>
                <div style={{ background: 'var(--primary-dim)', color: 'var(--primary-light)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 900, border: '1px solid var(--primary-light)' }}>
-                 {meds.length} PLANES
+                 {filteredMeds.length} / {meds.length} PLANES
                </div>
             </div>
+
+            {/* Filtros Premium */}
+            {(uniquePathologies.length > 0 || uniqueDoctors.length > 0) && (
+              <div style={{ 
+                display: 'flex', 
+                gap: '12px', 
+                marginBottom: '24px', 
+                background: 'var(--bg-card)', 
+                padding: '16px 20px', 
+                borderRadius: '20px', 
+                border: '1px solid var(--border)',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <Activity size={16} style={{ color: 'var(--primary-light)' }} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Filtrar por:
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', minWidth: '240px' }}>
+                  {uniquePathologies.length > 0 && (
+                    <select 
+                      value={selectedPathology} 
+                      onChange={e => setSelectedPathology(e.target.value)}
+                      style={{ 
+                        background: 'var(--bg-dark)', 
+                        color: 'white', 
+                        border: '1px solid var(--border)', 
+                        borderRadius: '10px', 
+                        padding: '8px 12px', 
+                        fontSize: '0.75rem', 
+                        fontWeight: 700, 
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="All">Todas las Patologías</option>
+                      {uniquePathologies.map(p => (
+                        <option key={p} value={p}>{p.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  )}
+                  {uniqueDoctors.length > 0 && (
+                    <select 
+                      value={selectedDoctor} 
+                      onChange={e => setSelectedDoctor(e.target.value)}
+                      style={{ 
+                        background: 'var(--bg-dark)', 
+                        color: 'white', 
+                        border: '1px solid var(--border)', 
+                        borderRadius: '10px', 
+                        padding: '8px 12px', 
+                        fontSize: '0.75rem', 
+                        fontWeight: 700, 
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="All">Todos los Médicos</option>
+                      {uniqueDoctors.map(d => (
+                        <option key={d} value={d}>{d.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="summary-grid">
                <div className="card" style={{ margin: 0, padding: '24px', textAlign: 'center', background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--primary-dim) 100%)' }}>
                   <Activity size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
                   <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Progreso Plan</p>
                   <p style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary-light)' }}>
-                    {meds.length ? Math.round(meds.reduce((acc, m) => acc + (m.dosesTaken || 0), 0) / meds.reduce((acc, m) => acc + ((m.durationDays || 1) * (m.timesPerDay || 1)), 0) * 100) : 0}%
+                    {filteredMeds.length ? Math.round(filteredMeds.reduce((acc, m) => acc + (m.dosesTaken || 0), 0) / filteredMeds.reduce((acc, m) => acc + ((m.durationDays || 1) * (m.timesPerDay || 1)), 0) * 100) : 0}%
                   </p>
                </div>
                <div className="card" style={{ margin: 0, padding: '24px', textAlign: 'center' }}>
                   <Clock size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
                   <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Tomas Hoy</p>
                   <p style={{ fontSize: '2rem', fontWeight: 900 }}>
-                    {meds.reduce((acc, m) => acc + (m.lastResetDate === localToday() ? (m.takenTodayCount || 0) : 0), 0)}
+                    {filteredMeds.reduce((acc, m) => acc + (m.lastResetDate === localToday() ? (m.takenTodayCount || 0) : 0), 0)}
                   </p>
                </div>
             </div>
@@ -888,7 +980,7 @@ export default function App() {
 
             <div className="meds-grid">
               {(() => {
-                const sortedMeds = [...meds].sort((a, b) => {
+                const sortedMeds = [...filteredMeds].sort((a, b) => {
                   const totalA = (a.durationDays || 0) * (a.timesPerDay || 1);
                   const isCompletedA = (a.dosesTaken || 0) >= totalA;
                   const totalB = (b.durationDays || 0) * (b.timesPerDay || 1);
@@ -929,6 +1021,40 @@ export default function App() {
                              )}
                           </div>
                           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>{med.dosage} • {med.timesPerDay} veces al día</p>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                            {med.pathology && (
+                              <span style={{ 
+                                background: 'rgba(139, 92, 246, 0.1)', 
+                                color: '#a78bfa', 
+                                fontSize: '0.62rem', 
+                                padding: '2px 8px', 
+                                borderRadius: '8px', 
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                textTransform: 'uppercase'
+                              }}>
+                                <Activity size={10} /> {med.pathology}
+                              </span>
+                            )}
+                            {med.doctorName && (
+                              <span style={{ 
+                                background: 'rgba(45, 212, 191, 0.1)', 
+                                color: '#2dd4bf', 
+                                fontSize: '0.62rem', 
+                                padding: '2px 8px', 
+                                borderRadius: '8px', 
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                textTransform: 'uppercase'
+                              }}>
+                                <Shield size={10} /> {med.doctorName}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div style={{ display: 'flex', gap: '14px' }}>
                            <Share2 size={18} onClick={() => shareReportWhatsApp(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Compartir por WhatsApp" />
@@ -1351,6 +1477,16 @@ export default function App() {
                   <div className="input-group" style={{ marginBottom: 0 }}><label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>DOSIS</label><input type="text" className="input-field" value={formData.dosage} onChange={e => setFormData({...formData, dosage: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} /></div>
                   <div className="input-group" style={{ marginBottom: 0 }}><label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>DURACIÓN (DÍAS)</label><input type="number" className="input-field" value={formData.durationDays} onChange={e => setFormData({...formData, durationDays: parseInt(e.target.value) || 1})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} /></div>
                 </div>
+                <div className="form-grid">
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>PATOLOGÍA / CONDICIÓN</label>
+                    <input type="text" className="input-field" placeholder="Ej: Lumbalgia, Migraña" value={formData.pathology || ''} onChange={e => setFormData({...formData, pathology: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
+                  </div>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>MÉDICO QUE PRESCRIBE</label>
+                    <input type="text" className="input-field" placeholder="Ej: Dr. Roberto Leyva" value={formData.doctorName || ''} onChange={e => setFormData({...formData, doctorName: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
+                  </div>
+                </div>
                 <div className="input-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>FRECUENCIA DIARIA: {formData.timesPerDay}</label>
                   <input type="range" min="1" max="8" style={{ width: '100%' }} value={formData.timesPerDay} onChange={e => handleFrequencyChange(e.target.value)} />
@@ -1369,7 +1505,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="fab" onClick={() => setShowModal(true)} style={{ width: '64px', height: '64px' }}><Plus size={32} /></div>
+      <div className="fab" onClick={openNewPlanModal} style={{ width: '64px', height: '64px' }}><Plus size={32} /></div>
 
       {/* ── PWA Install Banner ── */}
       {showInstallBanner && (

@@ -66,15 +66,30 @@ export const api = {
   },
 
   async deleteHistoryLog(logId, userId) {
-    return this.jsonp('deleteHistoryLog', { logId, userId });
+    try {
+      return await this.jsonp('deleteHistoryLog', { logId, userId });
+    } catch (error) {
+      this.deleteLocalHistoryLog(logId);
+      return { success: true, offline: true };
+    }
   },
 
   async editHistoryLog(logId, timestamp, date, userId) {
-    return this.jsonp('editHistoryLog', { logId, timestamp, date, userId });
+    try {
+      return await this.jsonp('editHistoryLog', { logId, timestamp, date, userId });
+    } catch (error) {
+      this.editLocalHistoryLog(logId, timestamp, date);
+      return { success: true, offline: true };
+    }
   },
 
   async addManualHistoryLog(log, userId) {
-    return this.jsonp('addManualHistoryLog', { data: JSON.stringify(log), userId });
+    try {
+      return await this.jsonp('addManualHistoryLog', { data: JSON.stringify(log), userId });
+    } catch (error) {
+      this.addLocalManualHistoryLog(log);
+      return { success: true, offline: true };
+    }
   },
 
   async uploadPrescription(file, userId) {
@@ -158,9 +173,62 @@ export const api = {
   syncLocalMeds(meds) { localStorage.setItem('meds', JSON.stringify(meds)); },
   getLocalHistory() { return JSON.parse(localStorage.getItem('history') || '[]'); },
   syncLocalHistory(history) { localStorage.setItem('history', JSON.stringify(history)); },
-  saveLocalMed(med) { /* fallback simple */ },
-  deleteLocalMed(id) { /* fallback simple */ },
-  saveLocalHistory(log) { /* fallback simple */ },
+  saveLocalMed(med) {
+    const meds = this.getLocalMeds();
+    const index = meds.findIndex(m => m.id === med.id);
+    if (index > -1) {
+      meds[index] = { ...meds[index], ...med, updatedAt: new Date().toISOString() };
+    } else {
+      med.id = med.id || 'local_' + Math.random().toString(36).substring(2, 9);
+      meds.push({ ...med, updatedAt: new Date().toISOString() });
+    }
+    this.syncLocalMeds(meds);
+  },
+  deleteLocalMed(id) {
+    const meds = this.getLocalMeds();
+    const filtered = meds.filter(m => m.id !== id);
+    this.syncLocalMeds(filtered);
+  },
+  saveLocalHistory(log) {
+    const history = this.getLocalHistory();
+    log.id = log.id || 'local_' + Math.random().toString(36).substring(2, 9);
+    history.unshift(log);
+    this.syncLocalHistory(history);
+  },
+  deleteLocalHistoryLog(logId) {
+    const history = this.getLocalHistory();
+    const filtered = history.filter(h => h.id !== logId);
+    this.syncLocalHistory(filtered);
+  },
+  editLocalHistoryLog(logId, timestamp, date) {
+    const history = this.getLocalHistory();
+    const index = history.findIndex(h => h.id === logId);
+    if (index > -1) {
+      history[index] = { ...history[index], timestamp, date };
+      this.syncLocalHistory(history);
+    }
+  },
+  addLocalManualHistoryLog(log) {
+    const history = this.getLocalHistory();
+    log.id = log.id || 'local_' + Math.random().toString(36).substring(2, 9);
+    history.unshift(log);
+    this.syncLocalHistory(history);
+
+    // Also increment dosesTaken and takenTodayCount in local meds
+    if (log.medId) {
+      const meds = this.getLocalMeds();
+      const medIndex = meds.findIndex(m => m.id === log.medId);
+      if (medIndex > -1) {
+        meds[medIndex].dosesTaken = (meds[medIndex].dosesTaken || 0) + 1;
+        const lastReset = meds[medIndex].lastResetDate;
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (lastReset === todayStr) {
+          meds[medIndex].takenTodayCount = (meds[medIndex].takenTodayCount || 0) + 1;
+        }
+        this.syncLocalMeds(meds);
+      }
+    }
+  },
 
   /**
    * Ensures `times` is always a proper string[] array, regardless of how

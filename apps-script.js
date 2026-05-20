@@ -25,12 +25,18 @@ function setup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // Medications sheet
-  if (!ss.getSheetByName(MEDS_SHEET_NAME)) {
+  var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
+  if (!medsSheet) {
     ss.insertSheet(MEDS_SHEET_NAME).appendRow([
       'id','userId','name','dosage','times','timesPerDay',
       'durationDays','startDate','notes','dosesTaken',
-      'takenTodayCount','lastResetDate','lastTakenDate','prescriptionUrl','updatedAt'
+      'takenTodayCount','lastResetDate','lastTakenDate','prescriptionUrl','updatedAt',
+      'doctorName', 'pathology'
     ]);
+  } else {
+    var headers = medsSheet.getRange(1, 1, 1, medsSheet.getLastColumn()).getValues()[0];
+    if (headers.indexOf('doctorName') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('doctorName');
+    if (headers.indexOf('pathology') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('pathology');
   }
 
   // History sheet
@@ -355,11 +361,14 @@ function doGet(e) {
       var k = String(m6.id);
       if (!byId[k] || (m6.dosesTaken || 0) >= (byId[k].dosesTaken || 0)) byId[k] = m6;
     });
-    // Deduplicate by name+dosage
+    // Deduplicate by name+dosage+doctorName+pathology
     var byName = {};
     Object.keys(byId).forEach(function(k6) {
       var m6 = byId[k6];
-      var nk = String(m6.name).trim().toLowerCase() + '|' + String(m6.dosage).trim().toLowerCase();
+      var nk = String(m6.name).trim().toLowerCase() + '|' + 
+               String(m6.dosage).trim().toLowerCase() + '|' + 
+               String(m6.doctorName || '').trim().toLowerCase() + '|' + 
+               String(m6.pathology || '').trim().toLowerCase();
       if (!byName[nk] || (m6.dosesTaken || 0) >= (byName[nk].dosesTaken || 0)) byName[nk] = m6;
     });
     result = Object.keys(byName).map(function(k) { return byName[k]; });
@@ -459,14 +468,23 @@ function checkAndSendAlerts() {
 
     var processedMeds = {}; // Deduplicate meds in memory
 
+    var medsHeaders = medsData[0];
+    var docNameIdx  = medsHeaders.indexOf('doctorName');
+    var pathologyIdx = medsHeaders.indexOf('pathology');
+
     for (var med = 1; med < medsData.length; med++) {
       if (String(medsData[med][1]) !== userId) continue;
 
       var medId   = String(medsData[med][0]);
       var medName = String(medsData[med][2]);
       var dosage  = String(medsData[med][3]);
+      var docName = docNameIdx >= 0 ? String(medsData[med][docNameIdx] || '') : '';
+      var pathol  = pathologyIdx >= 0 ? String(medsData[med][pathologyIdx] || '') : '';
       
-      var medKey = medName.trim().toLowerCase() + '|' + dosage.trim().toLowerCase();
+      var medKey = medName.trim().toLowerCase() + '|' + 
+                   dosage.trim().toLowerCase() + '|' + 
+                   docName.trim().toLowerCase() + '|' + 
+                   pathol.trim().toLowerCase();
       if (processedMeds[medKey]) continue; // Skip duplicates
       processedMeds[medKey] = true;
 
