@@ -26,6 +26,23 @@ const getDriveImageUrl = (url) => {
   return fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : url;
 };
 
+const getDoctorsList = (doctorNameField) => {
+  if (!doctorNameField) return [];
+  try {
+    const parsed = JSON.parse(doctorNameField);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {
+    // Fallback if not JSON
+  }
+  return [{ id: 'default', name: doctorNameField, phone: '', email: '' }];
+};
+
+const getDisplayDoctorName = (doctorNameField) => {
+  const list = getDoctorsList(doctorNameField);
+  if (list.length === 0) return '(Configurar en Ajustes)';
+  return list.map(d => d.name).join(', ');
+};
+
 export default function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('ergomedi_user');
@@ -46,6 +63,12 @@ export default function App() {
     return saved !== null ? JSON.parse(saved) : true;
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // States for Treating Doctors (Médicos Tratantes)
+  const [showDoctorForm, setShowDoctorForm] = useState(false);
+  const [doctorForm, setDoctorForm] = useState({ id: '', name: '', phone: '', email: '' });
+  const [doctorEditId, setDoctorEditId] = useState(null);
+  const [showCustomDoctorInput, setShowCustomDoctorInput] = useState(false);
 
   const toggleSidebar = () => {
     const nextVal = !sidebarExpanded;
@@ -469,6 +492,54 @@ export default function App() {
     }
   };
 
+  const handleSaveDoctor = async (e) => {
+    e.preventDefault();
+    if (!doctorForm.name.trim()) return;
+
+    const currentDoctors = getDoctorsList(user.doctorName);
+    let updatedDoctors;
+
+    if (doctorEditId) {
+      // Editing existing doctor
+      updatedDoctors = currentDoctors.map(d => d.id === doctorEditId ? { ...doctorForm, id: doctorEditId } : d);
+    } else {
+      // Adding new doctor
+      const newDoctor = {
+        ...doctorForm,
+        id: 'doc_' + Date.now()
+      };
+      updatedDoctors = [...currentDoctors, newDoctor];
+    }
+
+    const serialized = JSON.stringify(updatedDoctors);
+    await updateProfile({ doctorName: serialized });
+
+    // Reset form
+    setDoctorForm({ id: '', name: '', phone: '', email: '' });
+    setDoctorEditId(null);
+    setShowDoctorForm(false);
+  };
+
+  const handleEditDoctor = (doc) => {
+    setDoctorForm(doc);
+    setDoctorEditId(doc.id);
+    setShowDoctorForm(true);
+  };
+
+  const handleDeleteDoctor = async (docId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este médico tratante?")) return;
+    const currentDoctors = getDoctorsList(user.doctorName);
+    const updatedDoctors = currentDoctors.filter(d => d.id !== docId);
+    const serialized = JSON.stringify(updatedDoctors);
+    await updateProfile({ doctorName: serialized });
+  };
+
+  const handleCancelDoctor = () => {
+    setDoctorForm({ id: '', name: '', phone: '', email: '' });
+    setDoctorEditId(null);
+    setShowDoctorForm(false);
+  };
+
   const deleteHistoryLog = async (logId) => {
     if (!window.confirm("¿Estás seguro de eliminar este registro de toma? Esto recalculará las dosis tomadas del plan.")) return;
     setLoading(true);
@@ -588,10 +659,10 @@ export default function App() {
     const DARK_TEAL  = [9, 80, 84];    // Sub-header band
     const WHITE      = [255, 255, 255];
     
-    const HEADER_H   = 55; // main header height
+    const HEADER_H   = 38; // main header height
     const LOGO_X     = 10;
-    const LOGO_Y     = 8;
-    const LOGO_SZ    = 34; // logo size
+    const LOGO_Y     = 6;
+    const LOGO_SZ    = 20; // logo size
 
     // ── MAIN HEADER BAND ──────────────────────────────────────────
     docPdf.setFillColor(...TEAL);
@@ -603,44 +674,35 @@ export default function App() {
     }
 
     // "ERGOMEDI-TRACKER" label below logo
-    docPdf.setFontSize(14);
+    docPdf.setFontSize(10);
     docPdf.setTextColor(...WHITE);
     docPdf.setFont(undefined, 'bold');
-    docPdf.text('ERGOMEDI-TRACKER', LOGO_X, LOGO_Y + LOGO_SZ + 8);
+    docPdf.text('ERGOMEDI-TRACKER', LOGO_X, LOGO_Y + LOGO_SZ + 6);
 
     // ── RIGHT COLUMN: company info ────────────────────────────────
     // Company name
-    docPdf.setFontSize(11);
+    docPdf.setFontSize(10);
     docPdf.setFont(undefined, 'bold');
-    docPdf.text('ERGOEXPRESS, C.A.', pageW - 12, 14, { align: 'right' });
+    docPdf.text('ERGOEXPRESS, C.A.', pageW - 12, 11, { align: 'right' });
 
     // RIF / address / contact
     docPdf.setFontSize(7.5);
     docPdf.setFont(undefined, 'normal');
-    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', pageW - 12, 19, { align: 'right' });
-    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 24, { align: 'right' });
+    docPdf.text('RIF: J-502512462  |  San Joaquín, Carabobo, Venezuela', pageW - 12, 16, { align: 'right' });
+    docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 21, { align: 'right' });
 
-    // Patient & Doctor
+    // Patient
     const patientName = user?.patientName || '(Configurar en Ajustes)';
-    const doctorName  = user?.doctorName  || '(Configurar en Ajustes)';
     
     docPdf.setFontSize(8);
     
     // 1. Paciente
     docPdf.setFont(undefined, 'bold');
     const patientWidth = docPdf.getTextWidth(patientName);
-    docPdf.text(patientName, pageW - 12, 34, { align: 'right' });
+    docPdf.text(patientName, pageW - 12, 29, { align: 'right' });
     
     docPdf.setFont(undefined, 'normal');
-    docPdf.text('Paciente: ', pageW - 12 - patientWidth, 34, { align: 'right' });
-    
-    // 2. Médico Tratante
-    docPdf.setFont(undefined, 'bold');
-    const doctorWidth = docPdf.getTextWidth(doctorName);
-    docPdf.text(doctorName, pageW - 12, 40, { align: 'right' });
-    
-    docPdf.setFont(undefined, 'normal');
-    docPdf.text('Médico Tratante: ', pageW - 12 - doctorWidth, 40, { align: 'right' });
+    docPdf.text('Paciente: ', pageW - 12 - patientWidth, 29, { align: 'right' });
 
     // ── SUB-HEADER BAND: report title + date ──────────────────────
     const BAND_Y = HEADER_H;
@@ -771,17 +833,30 @@ export default function App() {
     setEditingId(med.id);
     const today = new Date().toISOString().split('T')[0];
     setFormData({ ...med, takenTodayCount: med.lastResetDate === today ? (med.takenTodayCount || 0) : 0 });
+    
+    const doctors = getDoctorsList(user?.doctorName);
+    const isPreset = doctors.some(d => d.name === med.doctorName);
+    setShowCustomDoctorInput(!isPreset && med.doctorName !== '');
     setShowModal(true);
   };
 
-  const closeModal = () => { setShowModal(false); setEditingId(null); setFormData(initialFormState); setErrorMessage(""); };
+  const closeModal = () => { 
+    setShowModal(false); 
+    setEditingId(null); 
+    setFormData(initialFormState); 
+    setShowCustomDoctorInput(false);
+    setErrorMessage(""); 
+  };
 
   const openNewPlanModal = () => {
     setEditingId(null);
+    const doctors = getDoctorsList(user?.doctorName);
+    const defaultDoctorName = doctors.length > 0 ? doctors[0].name : '';
     setFormData({
       ...initialFormState,
-      doctorName: user?.doctorName || ''
+      doctorName: defaultDoctorName
     });
+    setShowCustomDoctorInput(doctors.length === 0);
     setShowModal(true);
   };
 
@@ -1490,20 +1565,124 @@ export default function App() {
                           style={{ background: 'var(--bg-main)' }}
                         />
                       </div>
-                      <div className="input-group">
-                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Shield size={14} style={{ display: 'inline', marginRight: '5px' }} /> MÉDICO TRATANTE
-                        </label>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Ej: Dr. Roberto Leyva"
-                          value={user.doctorName || ''}
-                          onChange={e => setUser({...user, doctorName: e.target.value})}
-                          onBlur={() => updateProfile({ doctorName: user.doctorName })}
-                          style={{ background: 'var(--bg-main)' }}
-                        />
-                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── MÉDICOS TRATANTES ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>Médicos Tratantes</p>
+                      {!showDoctorForm && (
+                        <button 
+                          type="button"
+                          onClick={() => { setShowDoctorForm(true); setDoctorEditId(null); setDoctorForm({ id: '', name: '', phone: '', email: '' }); }}
+                          className="btn-primary"
+                          style={{ padding: '6px 12px', fontSize: '0.65rem', height: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Plus size={12} /> AGREGAR MÉDICO
+                        </button>
+                      )}
+                    </div>
+
+                    {showDoctorForm && (
+                      <form onSubmit={handleSaveDoctor} style={{ background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                        <p style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--primary-light)', margin: 0 }}>
+                          {doctorEditId ? 'EDITAR MÉDICO' : 'NUEVO MÉDICO TRATANTE'}
+                        </p>
+                        <div className="input-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontWeight: 900, fontSize: '0.6rem', color: 'var(--text-muted)' }}>NOMBRE Y APELLIDO *</label>
+                          <input 
+                            type="text" 
+                            className="input-field" 
+                            required 
+                            placeholder="Ej: Dr. Roberto Leyva" 
+                            value={doctorForm.name} 
+                            onChange={e => setDoctorForm({...doctorForm, name: e.target.value})} 
+                            style={{ background: 'var(--bg-base)', padding: '8px 12px', fontSize: '0.8rem' }}
+                          />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontWeight: 900, fontSize: '0.6rem', color: 'var(--text-muted)' }}>TELÉFONO</label>
+                            <input 
+                              type="text" 
+                              className="input-field" 
+                              placeholder="Ej: +58424..." 
+                              value={doctorForm.phone} 
+                              onChange={e => setDoctorForm({...doctorForm, phone: e.target.value})} 
+                              style={{ background: 'var(--bg-base)', padding: '8px 12px', fontSize: '0.8rem' }}
+                            />
+                          </div>
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontWeight: 900, fontSize: '0.6rem', color: 'var(--text-muted)' }}>CORREO</label>
+                            <input 
+                              type="email" 
+                              className="input-field" 
+                              placeholder="Ej: dr.leyva@mail.com" 
+                              value={doctorForm.email} 
+                              onChange={e => setDoctorForm({...doctorForm, email: e.target.value})} 
+                              style={{ background: 'var(--bg-base)', padding: '8px 12px', fontSize: '0.8rem' }}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <button type="submit" className="btn-primary" style={{ padding: '8px 12px', fontSize: '0.7rem', height: 'auto', borderRadius: '8px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', background: 'var(--primary)' }}>
+                            <Save size={12} /> GUARDAR
+                          </button>
+                          <button type="button" onClick={handleCancelDoctor} className="btn-primary" style={{ padding: '8px 12px', fontSize: '0.7rem', height: 'auto', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', flex: 1 }}>
+                            CANCELAR
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {getDoctorsList(user.doctorName).length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '16px', background: 'var(--bg-main)', border: '1px dashed var(--border)', borderRadius: '12px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                          No hay médicos registrados. Agrega uno arriba para asociarlo a tus planes de medicación.
+                        </div>
+                      ) : (
+                        getDoctorsList(user.doctorName).map((doc) => (
+                          <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '12px', padding: '10px 14px', gap: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Shield size={12} style={{ color: 'var(--primary-light)', flexShrink: 0 }} />
+                                <span style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '2px' }}>
+                                {doc.phone && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Phone size={10} /> {doc.phone}
+                                  </span>
+                                )}
+                                {doc.email && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Mail size={10} /> {doc.email}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                              <button 
+                                type="button" 
+                                onClick={() => handleEditDoctor(doc)} 
+                                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+                                title="Editar"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                              <button 
+                                type="button" 
+                                onClick={() => handleDeleteDoctor(doc.id)} 
+                                style={{ background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                                title="Eliminar"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
 
@@ -1594,7 +1773,51 @@ export default function App() {
                   </div>
                   <div className="input-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>MÉDICO QUE PRESCRIBE</label>
-                    <input type="text" className="input-field" placeholder="Ej: Dr. Roberto Leyva" value={formData.doctorName || ''} onChange={e => setFormData({...formData, doctorName: e.target.value})} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
+                    {getDoctorsList(user?.doctorName).length > 0 ? (
+                      <>
+                        <select 
+                          className="input-field" 
+                          value={showCustomDoctorInput ? 'custom_input' : (formData.doctorName || '')} 
+                          onChange={e => {
+                            if (e.target.value === 'custom_input') {
+                              setShowCustomDoctorInput(true);
+                              setFormData({...formData, doctorName: ''});
+                            } else {
+                              setShowCustomDoctorInput(false);
+                              setFormData({...formData, doctorName: e.target.value});
+                            }
+                          }}
+                          style={{ background: 'var(--bg-main)', padding: '9px 14px', color: 'var(--text-primary)' }}
+                        >
+                          <option value="">-- Seleccionar Médico --</option>
+                          {getDoctorsList(user?.doctorName).map((d) => (
+                            <option key={d.id} value={d.name}>{d.name}</option>
+                          ))}
+                          <option value="custom_input">Otro (Escribir...)</option>
+                        </select>
+                        {showCustomDoctorInput && (
+                          <input 
+                            type="text" 
+                            className="input-field" 
+                            required
+                            placeholder="Ej: Dr. Roberto Leyva" 
+                            value={formData.doctorName || ''} 
+                            onChange={e => setFormData({...formData, doctorName: e.target.value})} 
+                            style={{ background: 'var(--bg-main)', padding: '9px 14px', marginTop: '6px' }} 
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        required
+                        placeholder="Ej: Dr. Roberto Leyva" 
+                        value={formData.doctorName || ''} 
+                        onChange={e => setFormData({...formData, doctorName: e.target.value})} 
+                        style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="input-group" style={{ marginBottom: 0 }}>

@@ -744,3 +744,74 @@ body::before {
   }
 }
 
+/* Specific schedule chip states */
+
+/* 1. Pending (future/standard) state */
+.schedule-chip.pending {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* 2. Next (upcoming) state: pulses softly to guide the user */
+@keyframes chipPulse {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(45, 212, 191, 0.15);
+    border-color: rgba(45, 212, 191, 0.5);
+    background: rgba(45, 212, 191, 0.03);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(45, 212, 191, 0.5);
+    border-color: rgba(45, 212, 191, 1);
+    background: rgba(45, 212, 191, 0.08);
+  }
+}
+
+.schedule-chip.next:not(.taken) {
+  animation: chipPulse 2s infinite ease-in-out;
+  color: var(--primary-light);
+  font-weight: 900;
+}
+
+/* 3. Taken (confirmed) state: premium glassmorphism glow and gradient */
+.schedule-chip.taken {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(13, 115, 119, 0.45) 100%) !important;
+  border-color: var(--primary-light) !important;
+  color: #ffffff !important;
+  font-weight: 900;
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.45) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 4. Past (missed/atrasada) state: subtle warning tone */
+.schedule-chip.past:not(.taken) {
+  background: rgba(239, 68, 68, 0.04);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: rgba(239, 68, 68, 0.7);
+}
+
+/* 5. Completed plan state: elegant emerald green */
+.schedule-chip.completed {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: #10b981 !important;
+  color: #10b981 !important;
+  font-weight: 800;
+}
+
+/* Micro-animations: Scale-in / pop animation for the checkmark inside taken chip */
+.schedule-chip.taken svg {
+  animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+
