@@ -70,13 +70,46 @@ function setup() {
 }
 
 // ==========================================================
+// Helpers de autorización por rol
+// ==========================================================
+
+/**
+ * Devuelve true si el userId dado tiene role='admin' en la hoja de usuarios.
+ */
+function isAdminUser(ss, userId) {
+  var sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(userId)) {
+      return String(data[i][4]).toLowerCase() === 'admin';
+    }
+  }
+  return false;
+}
+
+/**
+ * Si el solicitante es admin y provee un targetUserId diferente,
+ * devuelve targetUserId. Si no, devuelve requestingUserId.
+ */
+function getEffectiveUserId(ss, requestingUserId, targetUserId) {
+  if (!targetUserId || String(targetUserId) === String(requestingUserId)) {
+    return String(requestingUserId);
+  }
+  if (isAdminUser(ss, requestingUserId)) {
+    return String(targetUserId);
+  }
+  return String(requestingUserId); // No admin: ignora targetUserId
+}
+
+// ==========================================================
 // doGet - Maneja todas las peticiones GET / JSONP
 // ==========================================================
 function doGet(e) {
-  var action   = e.parameter.action;
-  var userId   = e.parameter.userId;
-  var callback = e.parameter.callback;
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+  var action         = e.parameter.action;
+  var userId         = e.parameter.userId;
+  var targetUserId   = e.parameter.targetUserId || userId;  // admin puede pasar otro userId
+  var callback       = e.parameter.callback;
+  var ss             = SpreadsheetApp.getActiveSpreadsheet();
 
   var result;
 
@@ -115,13 +148,70 @@ function doGet(e) {
     }
   }
 
+  // ---------- GET USERS (solo admin) ----------
+  else if (action === 'getUsers' && userId) {
+    if (!isAdminUser(ss, userId)) {
+      result = { error: 'Unauthorized' };
+    } else {
+      var usSheet = ss.getSheetByName(USERS_SHEET_NAME);
+      var usData  = usSheet.getDataRange().getValues();
+      result = [];
+      for (var ui = 1; ui < usData.length; ui++) {
+        result.push({
+          id:          String(usData[ui][0]),
+          identifier:  String(usData[ui][1]),
+          role:        String(usData[ui][4] || 'user'),
+          phone:       String(usData[ui][5] || ''),
+          waApiKey:    String(usData[ui][6] || ''),
+          patientName: String(usData[ui][7] || ''),
+          doctorName:  String(usData[ui][8] || '')
+        });
+      }
+    }
+  }
+
+  // ---------- CREATE USER (solo admin) ----------
+  else if (action === 'createUser' && userId) {
+    if (!isAdminUser(ss, userId)) {
+      result = { error: 'Unauthorized' };
+    } else {
+      var cuSheet     = ss.getSheetByName(USERS_SHEET_NAME);
+      var cuData      = cuSheet.getDataRange().getValues();
+      var newIdentifier = String(e.parameter.identifier || '').trim();
+      var newName       = String(e.parameter.patientName || '').trim();
+      var newRole       = String(e.parameter.role || 'user').trim();
+      if (!newIdentifier) {
+        result = { error: 'identifier requerido' };
+      } else {
+        // Verificar si ya existe
+        var alreadyExists = false;
+        for (var ci = 1; ci < cuData.length; ci++) {
+          if (String(cuData[ci][1]).toLowerCase() === newIdentifier.toLowerCase()) {
+            alreadyExists = true;
+            break;
+          }
+        }
+        if (alreadyExists) {
+          result = { error: 'El identificador ya está registrado' };
+        } else {
+          var newUUID = Utilities.getUuid();
+          var utcOff  = parseInt(e.parameter.utcOffset) || 0;
+          cuSheet.appendRow([newUUID, newIdentifier, newName, new Date(), newRole, '', '', newName, '', utcOff]);
+          result = { success: true, id: newUUID, identifier: newIdentifier, patientName: newName, role: newRole };
+        }
+      }
+    }
+  }
+
   // ---------- UPDATE PROFILE ----------
   else if (action === 'updateProfile' && userId) {
+    // Admin puede actualizar perfil de otro usuario via targetUserId
+    var effectiveUpdateId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet2  = ss.getSheetByName(USERS_SHEET_NAME);
     var data2   = sheet2.getDataRange().getValues();
     var profile = JSON.parse(e.parameter.data);
     for (var j = 1; j < data2.length; j++) {
-      if (data2[j][0] == userId) {
+      if (String(data2[j][0]) === effectiveUpdateId) {
         if (profile.name        !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
         if (profile.phone       !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
         if (profile.waApiKey    !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
@@ -136,6 +226,7 @@ function doGet(e) {
 
   // ---------- SAVE MED (via GET to avoid CORS) ----------
   else if (action === 'saveMed' && userId) {
+    var effectiveSaveId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet3   = ss.getSheetByName(MEDS_SHEET_NAME);
     var med      = JSON.parse(e.parameter.data);
     var data3    = sheet3.getDataRange().getValues();
@@ -143,12 +234,12 @@ function doGet(e) {
     var rowIndex3 = -1;
     if (med.id) {
       for (var k = 1; k < data3.length; k++) {
-        if (data3[k][0] == med.id && data3[k][1] == userId) { rowIndex3 = k + 1; break; }
+        if (data3[k][0] == med.id && String(data3[k][1]) === effectiveSaveId) { rowIndex3 = k + 1; break; }
       }
     }
     var intFields = ['dosesTaken','takenTodayCount','durationDays','timesPerDay'];
     var row = headers3.map(function(h) {
-      if (h === 'userId')    return userId;
+      if (h === 'userId')    return effectiveSaveId;
       if (h === 'times')     return JSON.stringify(med[h]);
       if (h === 'updatedAt') return new Date();
       if (intFields.indexOf(h) >= 0) return parseInt(med[h]) || 0;
@@ -166,10 +257,11 @@ function doGet(e) {
 
   // ---------- DELETE MED ----------
   else if (action === 'deleteMed' && userId) {
+    var effectiveDelId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet4 = ss.getSheetByName(MEDS_SHEET_NAME);
     var data4  = sheet4.getDataRange().getValues();
     for (var m4 = data4.length - 1; m4 >= 1; m4--) {
-      if (data4[m4][0] == e.parameter.id && data4[m4][1] == userId) {
+      if (data4[m4][0] == e.parameter.id && String(data4[m4][1]) === effectiveDelId) {
         sheet4.deleteRow(m4 + 1);
       }
     }
@@ -178,10 +270,11 @@ function doGet(e) {
 
   // ---------- LOG HISTORY ----------
   else if (action === 'logHistory' && userId) {
+    var effectiveLogId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet5   = ss.getSheetByName(HISTORY_SHEET_NAME);
     var log      = JSON.parse(e.parameter.data);
     log.id       = Utilities.getUuid();
-    log.userId   = userId;
+    log.userId   = effectiveLogId;
     var headers5 = sheet5.getDataRange().getValues()[0];
     var row5     = headers5.map(function(h) { return log[h] || ''; });
     sheet5.appendRow(row5);
@@ -190,10 +283,11 @@ function doGet(e) {
 
   // ---------- ADD MANUAL HISTORY LOG ----------
   else if (action === 'addManualHistoryLog' && userId) {
+    var effectiveManualId = getEffectiveUserId(ss, userId, targetUserId);
     var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
     var log      = JSON.parse(e.parameter.data);
     log.id       = Utilities.getUuid();
-    log.userId   = userId;
+    log.userId   = effectiveManualId;
     var headers5 = historySheet.getDataRange().getValues()[0];
     var row5     = headers5.map(function(h) { return log[h] || ''; });
     historySheet.appendRow(row5);
@@ -205,7 +299,7 @@ function doGet(e) {
       var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
       var medsData = medsSheet.getDataRange().getValues();
       for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
-        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+        if (medsData[mIdx][0] == medId && String(medsData[mIdx][1]) === effectiveManualId) {
           var dosesTaken = parseInt(medsData[mIdx][9]) || 0;
           var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
           var lastResetDate = medsData[mIdx][11];
@@ -229,6 +323,7 @@ function doGet(e) {
 
   // ---------- EDIT HISTORY LOG ----------
   else if (action === 'editHistoryLog' && userId) {
+    var effectiveEditHistId = getEffectiveUserId(ss, userId, targetUserId);
     var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
     var historyData  = historySheet.getDataRange().getValues();
     var logId = e.parameter.logId;
@@ -239,7 +334,7 @@ function doGet(e) {
     var oldDate = null;
     
     for (var hIdx = 1; hIdx < historyData.length; hIdx++) {
-      if (historyData[hIdx][0] == logId && historyData[hIdx][1] == userId) {
+      if (historyData[hIdx][0] == logId && String(historyData[hIdx][1]) === effectiveEditHistId) {
         medId = historyData[hIdx][2];
         oldDate = historyData[hIdx][6];
         
@@ -254,7 +349,7 @@ function doGet(e) {
       var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
       var medsData = medsSheet.getDataRange().getValues();
       for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
-        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+        if (medsData[mIdx][0] == medId && String(medsData[mIdx][1]) === effectiveEditHistId) {
           var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
           var lastResetDate = medsData[mIdx][11];
           
@@ -278,6 +373,7 @@ function doGet(e) {
 
   // ---------- DELETE HISTORY LOG ----------
   else if (action === 'deleteHistoryLog' && userId) {
+    var effectiveDelHistId = getEffectiveUserId(ss, userId, targetUserId);
     var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
     var historyData  = historySheet.getDataRange().getValues();
     var logId = e.parameter.logId;
@@ -285,7 +381,7 @@ function doGet(e) {
     var logDate = null;
     
     for (var hIdx = historyData.length - 1; hIdx >= 1; hIdx--) {
-      if (historyData[hIdx][0] == logId && historyData[hIdx][1] == userId) {
+      if (historyData[hIdx][0] == logId && String(historyData[hIdx][1]) === effectiveDelHistId) {
         medId = historyData[hIdx][2];
         logDate = historyData[hIdx][6];
         historySheet.deleteRow(hIdx + 1);
@@ -298,7 +394,7 @@ function doGet(e) {
       var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
       var medsData = medsSheet.getDataRange().getValues();
       for (var mIdx = 1; mIdx < medsData.length; mIdx++) {
-        if (medsData[mIdx][0] == medId && medsData[mIdx][1] == userId) {
+        if (medsData[mIdx][0] == medId && String(medsData[mIdx][1]) === effectiveDelHistId) {
           var dosesTaken = parseInt(medsData[mIdx][9]) || 0;
           var takenTodayCount = parseInt(medsData[mIdx][10]) || 0;
           var lastResetDate = medsData[mIdx][11];
@@ -322,6 +418,7 @@ function doGet(e) {
 
   // ---------- GET MEDS ----------
   else if (action === 'getMeds' && userId) {
+    var effectiveGetMedsId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet6      = ss.getSheetByName(MEDS_SHEET_NAME);
     var data6       = sheet6.getDataRange().getValues();
     var headers6    = data6[0];
@@ -336,7 +433,7 @@ function doGet(e) {
 
     var rows6 = [];
     for (var r6 = 1; r6 < data6.length; r6++) {
-      if (data6[r6][1] != userId) continue;
+      if (String(data6[r6][1]) !== effectiveGetMedsId) continue;
       var obj6 = {};
       for (var c6 = 0; c6 < headers6.length; c6++) {
         var h6  = headers6[c6];
@@ -376,12 +473,13 @@ function doGet(e) {
 
   // ---------- GET HISTORY ----------
   else if (action === 'getHistory' && userId) {
+    var effectiveGetHistId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet7   = ss.getSheetByName(HISTORY_SHEET_NAME);
     var data7    = sheet7.getDataRange().getValues();
     var headers7 = data7[0];
     var rows7    = [];
     for (var r7 = 1; r7 < data7.length; r7++) {
-      if (data7[r7][1] != userId) continue;
+      if (String(data7[r7][1]) !== effectiveGetHistId) continue;
       var obj7 = {};
       for (var c7 = 0; c7 < headers7.length; c7++) { obj7[headers7[c7]] = data7[r7][c7]; }
       rows7.push(obj7);

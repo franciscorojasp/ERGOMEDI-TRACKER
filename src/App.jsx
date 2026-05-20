@@ -5,7 +5,7 @@ import {
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
   Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield,
-  Globe, Check, Menu, ChevronLeft
+  Globe, Check, Menu, ChevronLeft, Users
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -64,6 +64,24 @@ export default function App() {
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // ── Multi-Paciente: estados de admin ─────────────────────────────────
+  // patientList: lista de todos los pacientes (solo visible para admin)
+  // viewingUserId: ID del paciente cuya data se muestra ahora mismo
+  // viewingProfile: perfil del paciente visto (null = propio perfil)
+  const [patientList, setPatientList] = useState([]);
+  const [viewingUserId, setViewingUserId] = useState(null); // null = propio
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [showCreatePatientModal, setShowCreatePatientModal] = useState(false);
+  const [createPatientForm, setCreatePatientForm] = useState({ identifier: '', patientName: '', role: 'user' });
+  const [createPatientLoading, setCreatePatientLoading] = useState(false);
+  const [createPatientError, setCreatePatientError] = useState('');
+
+  // Helper: userId efectivo para operaciones de datos
+  const effectiveUserId = viewingUserId || user?.id;
+  const isViewingOtherPatient = viewingUserId && user && viewingUserId !== user.id;
+  // Perfil activo: propio o del paciente visto
+  const activeProfile = isViewingOtherPatient ? (viewingProfile || {}) : (user || {});
+
   // States for Treating Doctors (Médicos Tratantes)
   const [showDoctorForm, setShowDoctorForm] = useState(false);
   const [doctorForm, setDoctorForm] = useState({ id: '', name: '', phone: '', email: '' });
@@ -114,7 +132,15 @@ export default function App() {
 
   useEffect(() => {
     if (user?.id) {
-      fetchData(user.id, true);
+      // Inicializar viewingUserId al propio usuario si no está seteado
+      if (!viewingUserId) setViewingUserId(user.id);
+      fetchData(user.id, viewingUserId || user.id, true);
+      // Cargar lista de pacientes si es admin
+      if (user.role === 'admin') {
+        api.getUsers(user.id).then(list => {
+          if (Array.isArray(list)) setPatientList(list);
+        }).catch(() => {});
+      }
       // Auto-TimeZone Sync
       const currentOffset = -new Date().getTimezoneOffset();
       if (user.utcOffset !== currentOffset) {
@@ -226,13 +252,13 @@ export default function App() {
       const msUntilMidnight =
         new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).getTime() - now.getTime();
       return setTimeout(() => {
-        fetchData(user.id); // Re-fetch: takenTodayCount won't match new date, so UI resets
-        scheduleReset();    // Reschedule for next midnight
+        fetchData(user.id, viewingUserId || user.id);
+        scheduleReset();
       }, msUntilMidnight);
     };
     const t = scheduleReset();
     return () => clearTimeout(t);
-  }, [user?.id]);
+  }, [user?.id, viewingUserId]);
 
   // PWA Install prompt capture
   useEffect(() => {
@@ -267,14 +293,16 @@ export default function App() {
     }
   };
 
-  const fetchData = async (uid, showLoading = false) => {
+  const fetchData = async (uid, targetUid = null, showLoading = false) => {
+    const effectiveTarget = targetUid || uid;
     if (showLoading) setLoading(true);
     else setBackgroundSyncing(true);
     
     try {
+      const passTarget = effectiveTarget !== uid ? effectiveTarget : null;
       const [medsList, historyList] = await Promise.all([
-        api.getMeds(uid),
-        api.getHistory(uid)
+        api.getMeds(uid, passTarget),
+        api.getHistory(uid, passTarget)
       ]);
 
       // Deduplicate by id — keep the last occurrence (highest dosesTaken wins)
@@ -296,15 +324,19 @@ export default function App() {
 
       setMeds(deduped);
       setHistoryLogs(historyList || []);
-      const activePlansForNotifications = deduped.filter(m => {
-        const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
-        return (m.dosesTaken || 0) < totalNeeded;
-      });
-      if (activePlansForNotifications.length) {
-        setupNotifications(activePlansForNotifications, {
-          phone:    user?.phone    || '',
-          waApiKey: user?.waApiKey || '',
+
+      // Only set up notifications for own account
+      if (effectiveTarget === uid) {
+        const activePlansForNotifications = deduped.filter(m => {
+          const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
+          return (m.dosesTaken || 0) < totalNeeded;
         });
+        if (activePlansForNotifications.length) {
+          setupNotifications(activePlansForNotifications, {
+            phone:    user?.phone    || '',
+            waApiKey: user?.waApiKey || '',
+          });
+        }
       }
     } catch (err) {
       console.error("Sync error:", err);
@@ -368,9 +400,10 @@ export default function App() {
     
     closeModal();
 
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
-      await api.saveMed(dataToSave, user.id);
-      fetchData(user.id); // Sync in background
+      await api.saveMed(dataToSave, user.id, passTarget);
+      fetchData(user.id, effectiveUserId);
     } catch (err) {
       setMeds(oldMeds);
       setErrorMessage("Error al sincronizar con la nube.");
@@ -381,11 +414,12 @@ export default function App() {
     if (!window.confirm("¿Eliminar este plan permanentemente? Esta acción no se puede deshacer.")) return;
     const oldMeds = [...meds];
     setMeds(meds.filter(m => m.id !== id)); // Optimistic remove
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
-      await api.deleteMed(id, user.id);
-      fetchData(user.id); // Confirm real backend state
+      await api.deleteMed(id, user.id, passTarget);
+      fetchData(user.id, effectiveUserId);
     } catch (err) {
-      setMeds(oldMeds); // Rollback on error
+      setMeds(oldMeds);
       setErrorMessage("Error al eliminar el plan. Intenta nuevamente.");
     }
   };
@@ -429,6 +463,7 @@ export default function App() {
     setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
     if (soundEnabled && audioRef.current) audioRef.current.play();
 
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       await api.logHistory({ 
         medId: med.id, 
@@ -436,9 +471,9 @@ export default function App() {
         dosage: med.dosage, 
         timestamp, 
         date: today 
-      }, user.id);
-      await api.saveMed(updatedMed, user.id);
-      fetchData(user.id); // Refresh history in background
+      }, user.id, passTarget);
+      await api.saveMed(updatedMed, user.id, passTarget);
+      fetchData(user.id, effectiveUserId);
     } catch (err) {
       console.error("Error logging:", err);
     }
@@ -460,9 +495,10 @@ export default function App() {
     // Optimistic update
     setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
 
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
-      await api.saveMed(updatedMed, user.id);
-      fetchData(user.id); // Refresh to remove last history entry
+      await api.saveMed(updatedMed, user.id, passTarget);
+      fetchData(user.id, effectiveUserId);
     } catch (err) {
       console.error('Error undoing dose:', err);
     }
@@ -480,15 +516,24 @@ export default function App() {
     }
   };
 
-  const updateProfile = async (profileData, silent = false) => {
+  const updateProfile = async (profileData, silent = false, targetOverride = null) => {
     if (!user) return;
+    const targetId = targetOverride || (isViewingOtherPatient ? effectiveUserId : null);
     if (!silent) setLoading(true);
     try {
-      const res = await api.updateProfile(user.id, profileData);
+      const res = await api.updateProfile(user.id, profileData, targetId);
       if (res.success) {
-        const updatedUser = { ...user, ...profileData };
-        setUser(updatedUser);
-        localStorage.setItem('ergomedi_user', JSON.stringify(updatedUser));
+        if (targetId && targetId !== user.id) {
+          // Update the viewingProfile and patientList entry
+          setViewingProfile(prev => ({ ...prev, ...profileData }));
+          setPatientList(prev => prev.map(p =>
+            p.id === targetId ? { ...p, ...profileData } : p
+          ));
+        } else {
+          const updatedUser = { ...user, ...profileData };
+          setUser(updatedUser);
+          localStorage.setItem('ergomedi_user', JSON.stringify(updatedUser));
+        }
       }
     } catch (err) {
       if (!silent) setErrorMessage("Error al actualizar perfil.");
@@ -501,7 +546,7 @@ export default function App() {
     e.preventDefault();
     if (!doctorForm.name.trim()) return;
 
-    const currentDoctors = getDoctorsList(user.doctorName);
+    const currentDoctors = getDoctorsList(activeProfile.doctorName);
     let updatedDoctors;
 
     if (doctorEditId) {
@@ -533,7 +578,7 @@ export default function App() {
 
   const handleDeleteDoctor = async (docId) => {
     if (!window.confirm("¿Estás seguro de eliminar este médico tratante?")) return;
-    const currentDoctors = getDoctorsList(user.doctorName);
+    const currentDoctors = getDoctorsList(activeProfile.doctorName);
     const updatedDoctors = currentDoctors.filter(d => d.id !== docId);
     const serialized = JSON.stringify(updatedDoctors);
     await updateProfile({ doctorName: serialized });
@@ -548,9 +593,10 @@ export default function App() {
   const deleteHistoryLog = async (logId) => {
     if (!window.confirm("¿Estás seguro de eliminar este registro de toma? Esto recalculará las dosis tomadas del plan.")) return;
     setLoading(true);
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
-      await api.deleteHistoryLog(logId, user.id);
-      await fetchData(user.id);
+      await api.deleteHistoryLog(logId, user.id, passTarget);
+      await fetchData(user.id, effectiveUserId);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al eliminar la toma del historial.");
@@ -572,16 +618,17 @@ export default function App() {
     e.preventDefault();
     if (!editingHistoryLog || !editHistoryDate || !editHistoryTime) return;
     setLoading(true);
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       const [yr, mo, dy] = editHistoryDate.split('-').map(Number);
       const [h, m] = editHistoryTime.split(':').map(Number);
       const newDate = new Date(yr, mo - 1, dy, h, m);
       const newTimestamp = newDate.toISOString();
 
-      await api.editHistoryLog(editingHistoryLog.id, newTimestamp, editHistoryDate, user.id);
+      await api.editHistoryLog(editingHistoryLog.id, newTimestamp, editHistoryDate, user.id, passTarget);
       setShowEditHistoryModal(false);
       setEditingHistoryLog(null);
-      await fetchData(user.id);
+      await fetchData(user.id, effectiveUserId);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al guardar los cambios en la toma.");
@@ -596,6 +643,7 @@ export default function App() {
     const med = meds.find(m => m.id === manualLogMedId);
     if (!med) return;
     setLoading(true);
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       const [yr, mo, dy] = manualLogDate.split('-').map(Number);
       const [h, m] = manualLogTime.split(':').map(Number);
@@ -610,16 +658,78 @@ export default function App() {
         date: manualLogDate
       };
 
-      await api.addManualHistoryLog(log, user.id);
+      await api.addManualHistoryLog(log, user.id, passTarget);
       setShowManualLogModal(false);
       setManualLogMedId("");
       setManualLogTime("");
-      await fetchData(user.id);
+      await fetchData(user.id, effectiveUserId);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al registrar la toma manual.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Gestión de Pacientes (Admin) ──────────────────────────────────────
+  /** Admin selecciona un paciente para ver sus datos */
+  const handleSelectPatient = async (patientId) => {
+    if (!user || user.role !== 'admin') return;
+    setViewingUserId(patientId);
+    const patient = patientList.find(p => p.id === patientId);
+    setViewingProfile(patient || null);
+    setLoading(true);
+    const passTarget = patientId !== user.id ? patientId : null;
+    try {
+      const [medsList, historyList] = await Promise.all([
+        api.getMeds(user.id, passTarget),
+        api.getHistory(user.id, passTarget)
+      ]);
+      const byId = (medsList || []).reduce((acc, m) => {
+        const key = String(m.id);
+        if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) acc[key] = m;
+        return acc;
+      }, {});
+      const byName = Object.values(byId).reduce((acc, m) => {
+        const key = `${String(m.name).trim().toLowerCase()}|${String(m.dosage).trim().toLowerCase()}`;
+        if (!acc[key] || (m.dosesTaken || 0) >= (acc[key].dosesTaken || 0)) acc[key] = m;
+        return acc;
+      }, {});
+      setMeds(Object.values(byName));
+      setHistoryLogs(historyList || []);
+    } catch (err) {
+      setErrorMessage('Error al cargar datos del paciente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Admin crea una nueva cuenta de paciente */
+  const handleCreatePatient = async (e) => {
+    e.preventDefault();
+    if (!createPatientForm.identifier.trim()) return;
+    setCreatePatientLoading(true);
+    setCreatePatientError('');
+    try {
+      const res = await api.createPatient(
+        user.id,
+        createPatientForm.identifier.trim(),
+        createPatientForm.patientName.trim(),
+        createPatientForm.role
+      );
+      if (res.error) {
+        setCreatePatientError(res.error);
+      } else {
+        // Refresh patient list
+        const list = await api.getUsers(user.id);
+        if (Array.isArray(list)) setPatientList(list);
+        setShowCreatePatientModal(false);
+        setCreatePatientForm({ identifier: '', patientName: '', role: 'user' });
+      }
+    } catch (err) {
+      setCreatePatientError('Error de conexión. Inténtalo de nuevo.');
+    } finally {
+      setCreatePatientLoading(false);
     }
   };
 
@@ -697,7 +807,7 @@ export default function App() {
     docPdf.text('Teléfono: +58 424-4736489  |  Correo: ergoexpressinfo@gmail.com', pageW - 12, 21, { align: 'right' });
 
     // Patient
-    const patientName = user?.patientName || '(Configurar en Ajustes)';
+    const patientName = activeProfile?.patientName || user?.patientName || '(Configurar en Ajustes)';
     
     docPdf.setFontSize(8);
     
@@ -851,7 +961,18 @@ export default function App() {
     setFormData(initialFormState); 
     setShowCustomDoctorInput(false);
     setErrorMessage(""); 
+  };  const handleProfileFieldChange = (field, value) => {
+    if (isViewingOtherPatient) {
+      setViewingProfile(prev => ({ ...prev, [field]: value }));
+    } else {
+      setUser(prev => {
+        const updated = { ...prev, [field]: value };
+        localStorage.setItem('ergomedi_user', JSON.stringify(updated));
+        return updated;
+      });
+    }
   };
+
 
   const openNewPlanModal = () => {
     setEditingId(null);
@@ -1063,6 +1184,49 @@ export default function App() {
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {backgroundSyncing && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--primary-light)' }} />}
+            
+            {user.role === 'admin' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Users size={16} style={{ color: 'var(--primary-light)' }} />
+                <select
+                  value={viewingUserId || user.id}
+                  onChange={(e) => {
+                    if (e.target.value === 'create_patient_trigger') {
+                      setShowCreatePatientModal(true);
+                    } else {
+                      handleSelectPatient(e.target.value);
+                    }
+                  }}
+                  style={{
+                    background: 'var(--primary-dim)',
+                    color: 'var(--primary-light)',
+                    border: '1px solid var(--primary-light)',
+                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    outline: 'none',
+                    cursor: 'pointer',
+                    maxWidth: '180px',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <option value={user.id}>🌟 MI REGISTRO (ADMIN)</option>
+                  <optgroup label="Pacientes Registrados">
+                    {patientList.map(p => (
+                      p.id !== user.id && (
+                        <option key={p.id} value={p.id}>
+                          👤 {p.patientName || p.identifier.split('@')[0]} ({p.identifier})
+                        </option>
+                      )
+                    ))}
+                  </optgroup>
+                  <option value="create_patient_trigger">➕ REGISTRAR PACIENTE...</option>
+                </select>
+              </div>
+            )}
+
             <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
                <User size={16} style={{ color: 'var(--primary-light)' }} />
                <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
@@ -1073,8 +1237,48 @@ export default function App() {
         </header>
 
         <main className="main-content-scroll" style={{ width: '100%', flex: 1, padding: '20px', paddingBottom: '120px', maxWidth: '1200px', margin: '0 auto' }}>
-        {activeTab === 'dashboard' ? (
-          <>
+          {isViewingOtherPatient && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              borderRadius: '16px',
+              padding: '12px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+              boxShadow: '0 4px 15px rgba(245, 158, 11, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Users size={18} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b' }}>
+                  VIENDO REGISTRO DE: <span style={{ textDecoration: 'underline', color: 'white', fontWeight: 900 }}>{activeProfile.patientName || activeProfile.identifier.split('@')[0]}</span> ({activeProfile.identifier})
+                </p>
+              </div>
+              <button
+                onClick={() => handleSelectPatient(user.id)}
+                style={{
+                  background: '#f59e0b',
+                  color: 'black',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  fontSize: '0.7rem',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)'
+                }}
+              >
+                VOLVER A MI REGISTRO
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'dashboard' ? (
+            <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                <h2 style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.5px' }}>DASHBOARD</h2>
                <div style={{ background: 'var(--primary-dim)', color: 'var(--primary-light)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 900, border: '1px solid var(--primary-light)' }}>
@@ -1507,8 +1711,10 @@ export default function App() {
                      <User size={32} style={{ color: 'var(--primary-light)' }} />
                   </div>
                   <div style={{ textAlign: 'left' }}>
-                     <h3 style={{ fontWeight: 900, fontSize: '1.2rem' }}>{user.identifier}</h3>
-                     <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase' }}>{user.role === 'admin' ? 'ADMINISTRADOR' : 'PACIENTE'}</p>
+                     <h3 style={{ fontWeight: 900, fontSize: '1.2rem' }}>{activeProfile.identifier || user.identifier}</h3>
+                     <p style={{ fontSize: '0.7rem', color: 'var(--primary-light)', fontWeight: 900, textTransform: 'uppercase' }}>
+                       {isViewingOtherPatient ? 'PACIENTE (ADMINISTRADO)' : (user.role === 'admin' ? 'ADMINISTRADOR' : 'PACIENTE')}
+                     </p>
                   </div>
                </div>
 
@@ -1564,9 +1770,9 @@ export default function App() {
                           type="text"
                           className="input-field"
                           placeholder="Ej: María López"
-                          value={user.patientName || ''}
-                          onChange={e => setUser({...user, patientName: e.target.value})}
-                          onBlur={() => updateProfile({ patientName: user.patientName })}
+                          value={activeProfile.patientName || ''}
+                          onChange={e => handleProfileFieldChange('patientName', e.target.value)}
+                          onBlur={() => updateProfile({ patientName: activeProfile.patientName })}
                           style={{ background: 'var(--bg-main)' }}
                         />
                       </div>
@@ -1701,11 +1907,11 @@ export default function App() {
                       <span style={{
                         fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
                         textTransform: 'uppercase', letterSpacing: '0.5px',
-                        background: (user.phone && user.waApiKey) ? 'rgba(37,211,102,0.15)' : 'rgba(239,68,68,0.12)',
-                        color: (user.phone && user.waApiKey) ? '#25D366' : '#ef4444',
-                        border: `1px solid ${(user.phone && user.waApiKey) ? 'rgba(37,211,102,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                        background: (activeProfile.phone && activeProfile.waApiKey) ? 'rgba(37,211,102,0.15)' : 'rgba(239,68,68,0.12)',
+                        color: (activeProfile.phone && activeProfile.waApiKey) ? '#25D366' : '#ef4444',
+                        border: `1px solid ${(activeProfile.phone && activeProfile.waApiKey) ? 'rgba(37,211,102,0.3)' : 'rgba(239,68,68,0.3)'}`,
                       }}>
-                        {(user.phone && user.waApiKey) ? '● Configurado' : '○ Sin configurar'}
+                        {(activeProfile.phone && activeProfile.waApiKey) ? '● Configurado' : '○ Sin configurar'}
                       </span>
                     </div>
 
@@ -1748,9 +1954,9 @@ export default function App() {
                           type="tel"
                           className="input-field"
                           placeholder="Ej: +58424xxxxxxx  /  +573001234567"
-                          value={user.phone || ''}
-                          onChange={e => setUser({...user, phone: e.target.value})}
-                          onBlur={() => updateProfile({ phone: user.phone })}
+                          value={activeProfile.phone || ''}
+                          onChange={e => handleProfileFieldChange('phone', e.target.value)}
+                          onBlur={() => updateProfile({ phone: activeProfile.phone })}
                           style={{ background: 'var(--bg-main)' }}
                         />
                       </div>
@@ -1762,9 +1968,9 @@ export default function App() {
                           type="text"
                           className="input-field"
                           placeholder="Ej: 123456  (la recibes del bot por WhatsApp)"
-                          value={user.waApiKey || ''}
-                          onChange={e => setUser({...user, waApiKey: e.target.value})}
-                          onBlur={() => updateProfile({ waApiKey: user.waApiKey })}
+                          value={activeProfile.waApiKey || ''}
+                          onChange={e => handleProfileFieldChange('waApiKey', e.target.value)}
+                          onBlur={() => updateProfile({ waApiKey: activeProfile.waApiKey })}
                           style={{ background: 'var(--bg-main)' }}
                         />
                       </div>
@@ -1781,12 +1987,12 @@ export default function App() {
                       </button>
                       <button
                         onClick={async () => {
-                          if (!user.phone || !user.waApiKey) {
+                          if (!activeProfile.phone || !activeProfile.waApiKey) {
                             alert('Completa el número de teléfono y el API Key antes de probar.');
                             return;
                           }
-                          await testWhatsApp(user.phone, user.waApiKey);
-                          alert('✅ Mensaje de prueba enviado. Revisa tu WhatsApp en unos segundos.');
+                          await testWhatsApp(activeProfile.phone, activeProfile.waApiKey);
+                          alert('\u2705 Mensaje de prueba enviado. Revisa tu WhatsApp en unos segundos.');
                         }}
                         className="btn-primary"
                         style={{ background: 'var(--bg-main)', border: '1px solid #25D366', color: '#25D366', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
@@ -2039,6 +2245,94 @@ export default function App() {
                 
                 <button type="submit" className="btn-primary" style={{ height: '48px', fontWeight: 900, marginTop: '8px', fontSize: '0.85rem' }}>
                   GUARDAR CAMBIOS
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreatePatientModal && (
+        <div className="modal-overlay">
+          <div className="modal-box animate-fade" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3 style={{ fontWeight: 900, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus size={18} style={{ color: 'var(--primary-light)' }} /> REGISTRAR NUEVO PACIENTE
+              </h3>
+              <X onClick={() => { setShowCreatePatientModal(false); setCreatePatientError(''); }} size={22} style={{ cursor: 'pointer' }} />
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleCreatePatient} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    IDENTIFICADOR DEL PACIENTE *
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    required 
+                    placeholder="Ej: correo@gmail.com o +584241234567" 
+                    value={createPatientForm.identifier} 
+                    onChange={e => setCreatePatientForm({...createPatientForm, identifier: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                  <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Se usará como credencial de acceso para el paciente.
+                  </span>
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    NOMBRE COMPLETO *
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    required 
+                    placeholder="Ej: María Gómez" 
+                    value={createPatientForm.patientName} 
+                    onChange={e => setCreatePatientForm({...createPatientForm, patientName: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    ROL DEL USUARIO
+                  </label>
+                  <select 
+                    className="input-field" 
+                    value={createPatientForm.role} 
+                    onChange={e => setCreatePatientForm({...createPatientForm, role: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px', color: 'var(--text-primary)' }}
+                  >
+                    <option value="user">PACIENTE ESTÁNDAR</option>
+                    <option value="admin">SUPERADMINISTRADOR</option>
+                  </select>
+                </div>
+
+                {createPatientError && (
+                  <div style={{ 
+                    background: 'rgba(239, 68, 68, 0.1)', 
+                    color: '#ef4444', 
+                    padding: '10px 14px', 
+                    borderRadius: '12px', 
+                    fontSize: '0.75rem', 
+                    border: '1px solid rgba(239, 68, 68, 0.2)', 
+                    fontWeight: 700 
+                  }}>
+                    <AlertCircle size={14} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} /> {createPatientError}
+                  </div>
+                )}
+
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={createPatientLoading}
+                  style={{ height: '48px', fontWeight: 900, marginTop: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  {createPatientLoading ? 'CREANDO PACIENTE...' : 'CREAR PACIENTE'} <Plus size={16} />
                 </button>
               </form>
             </div>

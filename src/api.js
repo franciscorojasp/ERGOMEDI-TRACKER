@@ -9,83 +9,111 @@ export const api = {
     return this.jsonp('login', { identifier, utcOffset });
   },
 
-  async updateProfile(userId, profileData) {
+  async updateProfile(userId, profileData, targetUserId = null) {
     // Always refresh utcOffset in case user travelled / DST changed
     const utcOffset = -new Date().getTimezoneOffset();
     const fullProfile = { ...profileData, utcOffset };
-    return this.jsonp('updateProfile', { userId, data: JSON.stringify(fullProfile) });
+    const params = { userId, data: JSON.stringify(fullProfile) };
+    if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+    return this.jsonp('updateProfile', params);
   },
 
-  async getMeds(userId) {
+  /** Admin only: get list of all registered patients */
+  async getUsers(adminUserId) {
+    return this.jsonp('getUsers', { userId: adminUserId });
+  },
+
+  /** Admin only: create a new patient account */
+  async createPatient(adminUserId, identifier, patientName, role = 'user') {
+    const utcOffset = -new Date().getTimezoneOffset();
+    return this.jsonp('createUser', { userId: adminUserId, identifier, patientName, role, utcOffset });
+  },
+
+  async getMeds(userId, targetUserId = null) {
     try {
-      const data = await this.jsonp('getMeds', { userId });
+      const params = { userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      const data = await this.jsonp('getMeds', params);
       const normalized = (data || []).map(this.normalizeMed);
-      this.syncLocalMeds(normalized);
+      if (!targetUserId || targetUserId === userId) this.syncLocalMeds(normalized);
       return normalized;
     } catch (error) {
       return this.getLocalMeds();
     }
   },
 
-  async saveMed(med, userId) {
+  async saveMed(med, userId, targetUserId = null) {
     try {
-      // Usamos JSONP para guardar y así saltar el CORS de Google al redireccionar
-      return await this.jsonp('saveMed', { data: JSON.stringify(med), userId });
+      const params = { data: JSON.stringify(med), userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('saveMed', params);
     } catch (error) {
       this.saveLocalMed(med);
       return { success: true, offline: true };
     }
   },
 
-  async deleteMed(id, userId) {
+  async deleteMed(id, userId, targetUserId = null) {
     try {
-      return await this.jsonp('deleteMed', { id, userId });
+      const params = { id, userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('deleteMed', params);
     } catch (error) {
       this.deleteLocalMed(id);
       return { success: true, offline: true };
     }
   },
 
-  async getHistory(userId) {
+  async getHistory(userId, targetUserId = null) {
     try {
-      const data = await this.jsonp('getHistory', { userId });
-      this.syncLocalHistory(data);
+      const params = { userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      const data = await this.jsonp('getHistory', params);
+      if (!targetUserId || targetUserId === userId) this.syncLocalHistory(data);
       return data;
     } catch (error) {
       return this.getLocalHistory();
     }
   },
 
-  async logHistory(log, userId) {
+  async logHistory(log, userId, targetUserId = null) {
     try {
-      return await this.jsonp('logHistory', { data: JSON.stringify(log), userId });
+      const params = { data: JSON.stringify(log), userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('logHistory', params);
     } catch (error) {
       this.saveLocalHistory(log);
       return { success: true, offline: true };
     }
   },
 
-  async deleteHistoryLog(logId, userId) {
+  async deleteHistoryLog(logId, userId, targetUserId = null) {
     try {
-      return await this.jsonp('deleteHistoryLog', { logId, userId });
+      const params = { logId, userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('deleteHistoryLog', params);
     } catch (error) {
       this.deleteLocalHistoryLog(logId);
       return { success: true, offline: true };
     }
   },
 
-  async editHistoryLog(logId, timestamp, date, userId) {
+  async editHistoryLog(logId, timestamp, date, userId, targetUserId = null) {
     try {
-      return await this.jsonp('editHistoryLog', { logId, timestamp, date, userId });
+      const params = { logId, timestamp, date, userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('editHistoryLog', params);
     } catch (error) {
       this.editLocalHistoryLog(logId, timestamp, date);
       return { success: true, offline: true };
     }
   },
 
-  async addManualHistoryLog(log, userId) {
+  async addManualHistoryLog(log, userId, targetUserId = null) {
     try {
-      return await this.jsonp('addManualHistoryLog', { data: JSON.stringify(log), userId });
+      const params = { data: JSON.stringify(log), userId };
+      if (targetUserId && targetUserId !== userId) params.targetUserId = targetUserId;
+      return await this.jsonp('addManualHistoryLog', params);
     } catch (error) {
       this.addLocalManualHistoryLog(log);
       return { success: true, offline: true };
