@@ -5,7 +5,7 @@ import {
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
   Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield,
-  Globe, Check
+  Globe, Check, Menu, ChevronLeft
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -41,6 +41,18 @@ export default function App() {
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    const saved = localStorage.getItem('sidebar_expanded');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const toggleSidebar = () => {
+    const nextVal = !sidebarExpanded;
+    setSidebarExpanded(nextVal);
+    localStorage.setItem('sidebar_expanded', JSON.stringify(nextVal));
+  };
+
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [authMode, setAuthMode] = useState('login');
@@ -364,10 +376,18 @@ export default function App() {
     }
   };
 
-  const markAsTaken = async (med) => {
+  const markAsTaken = async (med, customTimeStr = null) => {
     if (!user) return;
     const today = localToday(); // local date, not UTC
-    const timestamp = new Date().toISOString();
+    let timestamp = new Date().toISOString();
+    
+    if (customTimeStr) {
+      // Create a local timestamp today at that custom time
+      const [h, m] = customTimeStr.split(':').map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      timestamp = d.toISOString();
+    }
     
     // Optimistic Update
     const updatedMed = { 
@@ -417,6 +437,18 @@ export default function App() {
       fetchData(user.id); // Refresh to remove last history entry
     } catch (err) {
       console.error('Error undoing dose:', err);
+    }
+  };
+
+  const handleChipClick = (med, timeStr, index, isTaken, isCompleted) => {
+    if (isCompleted) return;
+    if (isTaken) {
+      // If clicking a taken chip, we allow undoing the last dose!
+      // In a premium UX, we trigger the undo function which behaves cleanly.
+      undoLastDose(med);
+    } else {
+      // Mark it as taken, logging it at the specific schedule time for today
+      markAsTaken(med, timeStr);
     }
   };
 
@@ -850,29 +882,117 @@ export default function App() {
   });
 
   return (
-    <div className="animate-fade" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="animate-fade app-layout">
       <audio ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
 
-      <header className="header">
-        <div className="logo" style={{ fontSize: '1.4rem', gap: '10px' }}>
-          <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ height: '38px', width: '38px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
-          <span style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>
-            <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
-            <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
-          </span>
+      {/* MOBILE SIDEBAR OVERLAY */}
+      <div 
+        className={`sidebar-overlay ${mobileSidebarOpen ? 'visible' : ''}`}
+        onClick={() => setMobileSidebarOpen(false)}
+      />
+
+      {/* COLLAPSIBLE SIDEBAR */}
+      <aside className={`sidebar ${sidebarExpanded ? 'expanded' : 'collapsed'} ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-logo">
+          <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ height: '36px', width: '36px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
+          {sidebarExpanded && (
+            <span className="sidebar-logo-text">
+              <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
+              <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '4px' }}>TRACKER</span>
+            </span>
+          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {backgroundSyncing && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--primary-light)' }} />}
-          <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
-             <User size={16} style={{ color: 'var(--primary-light)' }} />
-             <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
-               {user.role === 'admin' ? 'SUPER USUARIO' : user.identifier.split('@')[0]}
-             </span>
+
+        <nav className="sidebar-menu">
+          <div 
+            className={`sidebar-menu-item ${activeTab === 'dashboard' ? 'active' : ''}`} 
+            onClick={() => { setActiveTab('dashboard'); setMobileSidebarOpen(false); }}
+            title="Dashboard"
+          >
+            <Activity size={20} />
+            {sidebarExpanded && <span className="sidebar-menu-text">Dashboard</span>}
+          </div>
+          <div 
+            className={`sidebar-menu-item ${activeTab === 'historial' ? 'active' : ''}`} 
+            onClick={() => { setActiveTab('historial'); setMobileSidebarOpen(false); }}
+            title="Historial"
+          >
+            <History size={20} />
+            {sidebarExpanded && <span className="sidebar-menu-text">Historial</span>}
+          </div>
+          <div 
+            className={`sidebar-menu-item ${activeTab === 'profile' ? 'active' : ''}`} 
+            onClick={() => { setActiveTab('profile'); setMobileSidebarOpen(false); }}
+            title="Ajustes"
+          >
+            <Settings size={20} />
+            {sidebarExpanded && <span className="sidebar-menu-text">Ajustes</span>}
+          </div>
+        </nav>
+
+        <div className="sidebar-footer">
+          {/* Collapse/Expand toggle on desktop */}
+          <button className="sidebar-toggle-btn" onClick={toggleSidebar}>
+            {sidebarExpanded ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ChevronLeft size={18} />
+                <span style={{ fontSize: '0.7rem', fontWeight: 900 }}>COLAPSAR</span>
+              </div>
+            ) : (
+              <ChevronRight size={18} />
+            )}
+          </button>
+          
+          {/* Logout button in sidebar footer */}
+          <div 
+            className="sidebar-menu-item" 
+            onClick={() => {
+              if (window.confirm("¿Seguro que deseas salir del sistema?")) {
+                localStorage.removeItem('ergomedi_user');
+                setUser(null);
+              }
+            }}
+            title="Cerrar Sesión"
+            style={{ color: '#ef4444' }}
+          >
+            <LogOut size={20} />
+            {sidebarExpanded && <span className="sidebar-menu-text" style={{ color: '#ef4444' }}>SALIR</span>}
           </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="main-container">
+      {/* MAIN CONTAINER */}
+      <div className={`main-content ${sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'}`}>
+        <header className="header">
+          {/* Hamburger Menu on Mobile */}
+          <button className="hamburger-btn" onClick={() => setMobileSidebarOpen(true)}>
+            <Menu size={24} />
+          </button>
+
+          <div className="logo" style={{ fontSize: '1.2rem', gap: '10px' }}>
+            {/* Show logo only if mobile or if sidebar is collapsed on desktop */}
+            {(!sidebarExpanded || mobileSidebarOpen) && (
+              <>
+                <img src="/logo.png" alt="ERGOMEDI-TRACKER" style={{ height: '32px', width: '32px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(15,224,224,0.5))' }} />
+                <span style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>
+                  <span style={{ color: 'var(--primary-light)' }}>ERGO</span>MEDI
+                </span>
+              </>
+            )}
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {backgroundSyncing && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--primary-light)' }} />}
+            <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
+               <User size={16} style={{ color: 'var(--primary-light)' }} />
+               <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
+                 {user.role === 'admin' ? 'SUPER USUARIO' : user.identifier.split('@')[0]}
+               </span>
+            </div>
+          </div>
+        </header>
+
+        <main className="main-content-scroll" style={{ width: '100%', flex: 1, padding: '20px', paddingBottom: '120px', maxWidth: '1200px', margin: '0 auto' }}>
         {activeTab === 'dashboard' ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -1119,29 +1239,18 @@ export default function App() {
                               const label = new Date(2000, 0, 1, h, m)
                                 .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
                               return (
-                                <div key={i} style={{
-                                  display: 'flex', alignItems: 'center', gap: '4px',
-                                  padding: '4px 10px',
-                                  borderRadius: '20px',
-                                  fontSize: '0.68rem',
-                                  fontWeight: 800,
-                                  border: isNext
-                                    ? '1.5px solid var(--primary-light)'
-                                    : isTaken
-                                      ? '1.5px solid var(--primary)'
-                                      : '1.5px solid var(--border)',
-                                  background: isNext
-                                    ? 'var(--primary-dim)'
-                                    : isTaken
-                                      ? 'rgba(13,115,119,0.15)'
-                                      : 'var(--bg-main)',
-                                  color: isNext
-                                    ? 'var(--primary-light)'
-                                    : isTaken
-                                      ? 'var(--primary-light)'
-                                      : 'var(--text-muted)',
-                                  opacity: isPast && !isTaken ? 0.5 : 1,
-                                }}>
+                                <div 
+                                  key={i} 
+                                  className={`schedule-chip ${isTaken ? 'taken' : 'pending'} ${isPast && !isTaken ? 'past' : ''} ${isNext ? 'next' : ''} ${isCompleted ? 'completed' : ''}`}
+                                  onClick={() => handleChipClick(med, t, i, isTaken, isCompleted)}
+                                  title={
+                                    isCompleted 
+                                      ? "Plan de tratamiento culminado" 
+                                      : isTaken 
+                                        ? "Click para deshacer esta toma" 
+                                        : `Click para registrar toma de las ${label}`
+                                  }
+                                >
                                   {isTaken && <CheckCircle2 size={10} />}
                                   {isNext && !isTaken && <Clock size={10} />}
                                   {label}
@@ -1449,6 +1558,7 @@ export default function App() {
           </div>
         )}
       </main>
+    </div>
 
       {showModal && (
         <div className="modal-overlay">
