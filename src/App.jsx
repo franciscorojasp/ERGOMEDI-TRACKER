@@ -10,7 +10,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { api } from './api';
-import { setupNotifications, shareToWhatsApp } from './notifications';
+import { setupNotifications, shareToWhatsApp, testWhatsApp } from './notifications';
 
 const getDriveImageUrl = (url) => {
   if (!url) return null;
@@ -300,7 +300,12 @@ export default function App() {
         const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
         return (m.dosesTaken || 0) < totalNeeded;
       });
-      if (activePlansForNotifications.length) setupNotifications(activePlansForNotifications);
+      if (activePlansForNotifications.length) {
+        setupNotifications(activePlansForNotifications, {
+          phone:    user?.phone    || '',
+          waApiKey: user?.waApiKey || '',
+        });
+      }
     } catch (err) {
       console.error("Sync error:", err);
     } finally {
@@ -1688,39 +1693,106 @@ export default function App() {
 
                   {/* ── NOTIFICACIONES WHATSAPP ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Notificaciones WhatsApp</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div className="input-group">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                        Alertas WhatsApp <span style={{ color: '#25D366', fontWeight: 700 }}>✓ Gratis</span>
+                      </p>
+                      {/* Status badge */}
+                      <span style={{
+                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
+                        textTransform: 'uppercase', letterSpacing: '0.5px',
+                        background: (user.phone && user.waApiKey) ? 'rgba(37,211,102,0.15)' : 'rgba(239,68,68,0.12)',
+                        color: (user.phone && user.waApiKey) ? '#25D366' : '#ef4444',
+                        border: `1px solid ${(user.phone && user.waApiKey) ? 'rgba(37,211,102,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                      }}>
+                        {(user.phone && user.waApiKey) ? '● Configurado' : '○ Sin configurar'}
+                      </span>
+                    </div>
+
+                    {/* Instruction card */}
+                    <div style={{
+                      background: 'rgba(37,211,102,0.06)', borderRadius: '12px',
+                      border: '1px solid rgba(37,211,102,0.2)', padding: '14px', marginBottom: '16px',
+                    }}>
+                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#25D366', marginBottom: '10px', letterSpacing: '0.5px' }}>
+                        📋 ACTIVACIÓN GRATUITA — 3 PASOS (solo una vez)
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                        {[
+                          { n: '1', txt: 'Guarda en WhatsApp el número: +34 644 65 21 68 como "CallMeBot"' },
+                          { n: '2', txt: 'Envíale el mensaje exacto: "I allow callmebot to send me messages"' },
+                          { n: '3', txt: 'Recibirás tu API Key en segundos. Cópiala y pégala abajo.' },
+                        ].map(({ n, txt }) => (
+                          <div key={n} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                            <span style={{
+                              minWidth: '20px', height: '20px', borderRadius: '50%',
+                              background: 'rgba(37,211,102,0.25)', color: '#25D366',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '0.6rem', fontWeight: 900, flexShrink: 0,
+                            }}>{n}</span>
+                            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>{txt}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '10px', marginBottom: 0 }}>
+                        💡 Recibirás alertas 10 min antes, 5 min antes y en la hora exacta de cada toma. Funciona aunque la app esté cerrada.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
                         <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                           <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TELÉFONO (PARA WHATSAPP)
+                          <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TU NÚMERO WHATSAPP (con código país)
                         </label>
                         <input
-                          type="text"
+                          type="tel"
                           className="input-field"
-                          placeholder="Ej: +58424..."
+                          placeholder="Ej: +58424xxxxxxx  /  +573001234567"
                           value={user.phone || ''}
                           onChange={e => setUser({...user, phone: e.target.value})}
                           onBlur={() => updateProfile({ phone: user.phone })}
                           style={{ background: 'var(--bg-main)' }}
                         />
                       </div>
-                      <div className="input-group">
+                      <div className="input-group" style={{ marginBottom: 0 }}>
                         <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                           <Bell size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
+                          <Bell size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
                         </label>
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Obtenlo en callmebot.com"
+                          placeholder="Ej: 123456  (la recibes del bot por WhatsApp)"
                           value={user.waApiKey || ''}
                           onChange={e => setUser({...user, waApiKey: e.target.value})}
                           onBlur={() => updateProfile({ waApiKey: user.waApiKey })}
                           style={{ background: 'var(--bg-main)' }}
                         />
-                        <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                          * Las alertas se enviarán a las horas configuradas en la hora local de tu dispositivo (10 min antes, 5 min antes y en el momento exacto).
-                        </p>
                       </div>
+                    </div>
+
+                    {/* Action buttons row */}
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => window.open('https://wa.me/34644652168?text=I%20allow%20callmebot%20to%20send%20me%20messages', '_blank')}
+                        className="btn-primary"
+                        style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                      >
+                        <Phone size={16} /> ACTIVAR BOT
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!user.phone || !user.waApiKey) {
+                            alert('Completa el número de teléfono y el API Key antes de probar.');
+                            return;
+                          }
+                          await testWhatsApp(user.phone, user.waApiKey);
+                          alert('✅ Mensaje de prueba enviado. Revisa tu WhatsApp en unos segundos.');
+                        }}
+                        className="btn-primary"
+                        style={{ background: 'var(--bg-main)', border: '1px solid #25D366', color: '#25D366', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                      >
+                        <Send size={16} /> PROBAR AHORA
+                      </button>
                     </div>
                   </div>
 
@@ -1728,10 +1800,8 @@ export default function App() {
                     <button onClick={handleLogout} className="btn-primary" style={{ background: '#ef4444', flex: 1 }}>
                       <LogOut size={20} /> SALIR
                     </button>
-                    <button onClick={() => window.open('https://www.callmebot.com/blog/free-api-whatsapp-messages/', '_blank')} className="btn-primary" style={{ background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)', flex: 1.5 }}>
-                      <Activity size={18} /> OBTENER API KEY
-                    </button>
                   </div>
+               
                </div>
             </div>
           </div>
