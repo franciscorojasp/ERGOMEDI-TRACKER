@@ -283,6 +283,20 @@ export default function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
+  // Auto-setup notifications when meds or settings change for the logged-in user
+  useEffect(() => {
+    if (user && (!viewingUserId || viewingUserId === user.id)) {
+      const activePlansForNotifications = meds.filter(m => {
+        const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
+        return (m.dosesTaken || 0) < totalNeeded;
+      });
+      setupNotifications(activePlansForNotifications, {
+        phone:    user.phone    || '',
+        waApiKey: user.waApiKey || '',
+      });
+    }
+  }, [meds, user?.phone, user?.waApiKey, viewingUserId, user?.id]);
+
   const handleInstallPWA = async () => {
     if (!installPromptEvent) return;
     await installPromptEvent.prompt();
@@ -324,20 +338,6 @@ export default function App() {
 
       setMeds(deduped);
       setHistoryLogs(historyList || []);
-
-      // Only set up notifications for own account
-      if (effectiveTarget === uid) {
-        const activePlansForNotifications = deduped.filter(m => {
-          const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
-          return (m.dosesTaken || 0) < totalNeeded;
-        });
-        if (activePlansForNotifications.length) {
-          setupNotifications(activePlansForNotifications, {
-            phone:    user?.phone    || '',
-            waApiKey: user?.waApiKey || '',
-          });
-        }
-      }
     } catch (err) {
       console.error("Sync error:", err);
     } finally {
