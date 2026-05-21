@@ -12,7 +12,7 @@
  * no message limits, no subscription, no expiration. Sends a real WhatsApp
  * message to the patient's own phone regardless of whether the app is open.
  * The patient must activate the bot once by sending a WhatsApp message to:
- *   +34 644 65 21 68  →  "I allow callmebot to send me messages"
+ *   +34 623 78 64 49  →  "I allow callmebot to send me messages"
  */
 
 // Deduplication store: "medId_HH:MM_offset" → true
@@ -62,7 +62,7 @@ function _playAlarm() {
  * Only sends to the phone number that activated the bot (the patient itself).
  *
  * Activation (one-time by the patient):
- *   1. Save "+34 644 65 21 68" in WhatsApp contacts as "CallMeBot"
+ *   1. Save "+34 623 78 64 49" in WhatsApp contacts as "CallMeBot"
  *   2. Send the message: "I allow callmebot to send me messages"
  *   3. You'll receive your API key in a few seconds
  *

@@ -1925,7 +1925,7 @@ export default function App() {
                       </p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                         {[
-                          { n: '1', txt: 'Guarda en WhatsApp el número: +34 644 65 21 68 como "CallMeBot"' },
+                          { n: '1', txt: 'Guarda en WhatsApp el número: +34 623 78 64 49 como "CallMeBot"' },
                           { n: '2', txt: 'Envíale el mensaje exacto: "I allow callmebot to send me messages"' },
                           { n: '3', txt: 'Recibirás tu API Key en segundos. Cópiala y pégala abajo.' },
                         ].map(({ n, txt }) => (
@@ -1979,7 +1979,7 @@ export default function App() {
                     {/* Action buttons row */}
                     <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
                       <button
-                        onClick={() => window.open('https://wa.me/34644652168?text=I%20allow%20callmebot%20to%20send%20me%20messages', '_blank')}
+                        onClick={() => window.open('https://wa.me/34623786449?text=I%20allow%20callmebot%20to%20send%20me%20messages', '_blank')}
                         className="btn-primary"
                         style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
                       >
