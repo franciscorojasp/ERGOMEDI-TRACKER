@@ -847,14 +847,14 @@ export default function App() {
       m.dosage || 'N/A',
       `${m.timesPerDay} ${m.timesPerDay === 1 ? 'toma' : 'tomas'}/día • ${m.durationDays} ${m.durationDays === 1 ? 'día' : 'días'}`,
       Array.isArray(m.times) ? m.times.join(', ') : (m.times || 'N/A'),
-      `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
+      `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%\n `
     ]);
     docPdf.autoTable({
       startY: BAND_Y + 14,
       margin: { left: 10, right: 10 },
       head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'FREC. / DÍAS', 'HORARIOS', 'PROGRESO']],
       body,
-      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 6.2 },
+      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 6.2, valign: 'middle' },
       styles: { fontSize: 6.8, cellPadding: 1.8 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
       columnStyles: {
@@ -864,20 +864,21 @@ export default function App() {
         3: { cellWidth: 15 }, // DOSIS
         4: { cellWidth: 32 }, // FREC. / DÍAS
         5: { cellWidth: 32 }, // HORARIOS
-        6: { cellWidth: 25, halign: 'center', fontStyle: 'bold' } // PROGRESO
+        6: { cellWidth: 25, halign: 'center', valign: 'top', fontStyle: 'bold' } // PROGRESO
       },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 6) {
-          const textContent = data.cell.text[0] || '0%';
+          const rawText = data.cell.text[0] || '0%';
+          const textContent = rawText.split('\n')[0] || '0%';
           const percent = Math.min(100, Math.max(0, parseInt(textContent.replace('%', ''), 10) || 0));
           
           const { x, y, width, height } = data.cell;
           
           // Configuracion de la barra
-          const barWidth = width - 12; // Dejar margen a los lados
-          const barHeight = 3; 
-          const barX = x + 6;
-          const barY = y + height - 6; // Colocar en la parte inferior de la celda
+          const barWidth = width - 8; // Dejar margen a los lados
+          const barHeight = 2.2; 
+          const barX = x + 4;
+          const barY = y + height - 3.8; // Colocar en la parte inferior de la celda
           
           // Dibujar fondo de la barra (Gris claro)
           docPdf.setFillColor(220, 225, 225);
