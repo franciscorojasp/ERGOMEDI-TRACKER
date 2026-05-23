@@ -853,10 +853,13 @@ export default function App() {
       startY: BAND_Y + 14,
       head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'FREC. / DÍAS', 'HORARIOS', 'PROGRESO']],
       body,
-      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 8 },
-      styles: { fontSize: 8.5, cellPadding: 5 },
+      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 7 },
+      styles: { fontSize: 7.5, cellPadding: 3 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
-      columnStyles: { 6: { halign: 'center', fontStyle: 'bold' } },
+      columnStyles: {
+        3: { cellWidth: 16 }, // DOSIS (normalmente corta)
+        6: { cellWidth: 26, halign: 'center', fontStyle: 'bold' } // PROGRESO
+      },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 6) {
           const textContent = data.cell.text[0] || '0%';
