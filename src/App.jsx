@@ -851,14 +851,20 @@ export default function App() {
     ]);
     docPdf.autoTable({
       startY: BAND_Y + 14,
+      margin: { left: 10, right: 10 },
       head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'FREC. / DÍAS', 'HORARIOS', 'PROGRESO']],
       body,
-      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 7 },
-      styles: { fontSize: 7.5, cellPadding: 3 },
+      headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 6.2 },
+      styles: { fontSize: 6.8, cellPadding: 1.8 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
       columnStyles: {
-        3: { cellWidth: 16 }, // DOSIS (normalmente corta)
-        6: { cellWidth: 26, halign: 'center', fontStyle: 'bold' } // PROGRESO
+        0: { cellWidth: 32 }, // MEDICAMENTO
+        1: { cellWidth: 28 }, // PATOLOGÍA
+        2: { cellWidth: 26 }, // MÉDICO
+        3: { cellWidth: 15 }, // DOSIS
+        4: { cellWidth: 32 }, // FREC. / DÍAS
+        5: { cellWidth: 32 }, // HORARIOS
+        6: { cellWidth: 25, halign: 'center', fontStyle: 'bold' } // PROGRESO
       },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 6) {
