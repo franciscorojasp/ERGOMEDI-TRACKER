@@ -845,19 +845,20 @@ export default function App() {
       m.pathology ? m.pathology.toUpperCase() : 'NO ESP.',
       m.doctorName ? m.doctorName.toUpperCase() : 'NO ESP.',
       m.dosage || 'N/A',
+      `${m.timesPerDay} ${m.timesPerDay === 1 ? 'toma' : 'tomas'}/día • ${m.durationDays} ${m.durationDays === 1 ? 'día' : 'días'}`,
       Array.isArray(m.times) ? m.times.join(', ') : (m.times || 'N/A'),
       `${Math.round(((m.dosesTaken || 0) / ((m.durationDays || 1) * (m.timesPerDay || 1))) * 100)}%`
     ]);
     docPdf.autoTable({
       startY: BAND_Y + 14,
-      head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'HORARIOS', 'PROGRESO']],
+      head: [['MEDICAMENTO', 'PATOLOGÍA', 'MÉDICO', 'DOSIS', 'FREC. / DÍAS', 'HORARIOS', 'PROGRESO']],
       body,
       headStyles: { fillColor: TEAL, fontStyle: 'bold', textColor: 255, fontSize: 8 },
       styles: { fontSize: 8.5, cellPadding: 5 },
       alternateRowStyles: { fillColor: [240, 250, 250] },
-      columnStyles: { 5: { halign: 'center', fontStyle: 'bold' } },
+      columnStyles: { 6: { halign: 'center', fontStyle: 'bold' } },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 5) {
+        if (data.section === 'body' && data.column.index === 6) {
           const textContent = data.cell.text[0] || '0%';
           const percent = Math.min(100, Math.max(0, parseInt(textContent.replace('%', ''), 10) || 0));
           
