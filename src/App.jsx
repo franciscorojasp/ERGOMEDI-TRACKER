@@ -5,7 +5,7 @@ import {
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
   Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield,
-  Globe, Check, Menu, ChevronLeft, Users
+  Globe, Check, Menu, ChevronLeft, Users, Filter, TrendingUp
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -55,6 +55,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedPathology, setSelectedPathology] = useState('All');
   const [selectedDoctor, setSelectedDoctor] = useState('All');
+  const [selectedStatus, setSelectedStatus] = useState('All');
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -1090,8 +1091,25 @@ export default function App() {
   const filteredMeds = (meds || []).filter(m => {
     const matchPathology = selectedPathology === 'All' || (m.pathology || '').trim().toLowerCase() === selectedPathology.trim().toLowerCase();
     const matchDoctor = selectedDoctor === 'All' || (m.doctorName || '').trim().toLowerCase() === selectedDoctor.trim().toLowerCase();
-    return matchPathology && matchDoctor;
+    const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
+    const isCompleted = (m.dosesTaken || 0) >= totalNeeded;
+    const matchStatus = selectedStatus === 'All' || (selectedStatus === 'completed' && isCompleted) || (selectedStatus === 'active' && !isCompleted);
+    return matchPathology && matchDoctor && matchStatus;
   });
+
+  // Pre-compute global stats for dashboard
+  const statsAll = (meds || []).reduce((acc, m) => {
+    const total = (m.durationDays || 0) * (m.timesPerDay || 1);
+    const done = m.dosesTaken || 0;
+    const completed = done >= total;
+    acc.total++;
+    acc.active += completed ? 0 : 1;
+    acc.completed += completed ? 1 : 0;
+    acc.dosesDone += done;
+    acc.dosesNeeded += total;
+    acc.takenToday += (m.lastResetDate === localToday() ? (m.takenTodayCount || 0) : 0);
+    return acc;
+  }, { total: 0, active: 0, completed: 0, dosesDone: 0, dosesNeeded: 0, takenToday: 0 });
 
   return (
     <div className="animate-fade app-layout">
@@ -1297,27 +1315,42 @@ export default function App() {
                </div>
             </div>
 
-            {/* Filtros Premium */}
-            {(uniquePathologies.length > 0 || uniqueDoctors.length > 0) && (
-              <div style={{ 
-                display: 'flex', 
-                gap: '12px', 
-                marginBottom: '24px', 
-                background: 'var(--bg-card)', 
-                padding: '16px 20px', 
-                borderRadius: '20px', 
-                border: '1px solid var(--border)',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <Activity size={16} style={{ color: 'var(--primary-light)' }} />
-                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Filtrar por:
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', minWidth: '240px' }}>
+            {/* ── Filtros Premium + Status Chips ── */}
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              gap: '14px', 
+              marginBottom: '24px', 
+              background: 'var(--bg-card)', 
+              padding: '18px 20px', 
+              borderRadius: '20px', 
+              border: '1px solid var(--border)',
+            }}>
+              {/* Status filter chips */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <Filter size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '4px' }}>Estado:</span>
+                {[
+                  { key: 'All', label: 'Todos', count: statsAll.total, icon: <Activity size={13} />, color: 'var(--primary-light)' },
+                  { key: 'active', label: 'En Progreso', count: statsAll.active, icon: <Clock size={13} />, color: '#f59e0b' },
+                  { key: 'completed', label: 'Culminados', count: statsAll.completed, icon: <CheckCircle2 size={13} />, color: '#10b981' },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSelectedStatus(opt.key)}
+                    className={`status-chip ${selectedStatus === opt.key ? 'active' : ''}`}
+                    style={selectedStatus === opt.key ? { '--chip-color': opt.color } : {}}
+                  >
+                    {opt.icon}
+                    <span>{opt.label}</span>
+                    <span className="status-chip-count">{opt.count}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Pathology + Doctor dropdowns */}
+              {(uniquePathologies.length > 0 || uniqueDoctors.length > 0) && (
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                   {uniquePathologies.length > 0 && (
                     <select 
                       value={selectedPathology} 
@@ -1331,7 +1364,9 @@ export default function App() {
                         fontSize: '0.75rem', 
                         fontWeight: 700, 
                         outline: 'none',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        flex: 1,
+                        minWidth: '160px'
                       }}
                     >
                       <option value="All">Todas las Patologías</option>
@@ -1353,7 +1388,9 @@ export default function App() {
                         fontSize: '0.75rem', 
                         fontWeight: 700, 
                         outline: 'none',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        flex: 1,
+                        minWidth: '160px'
                       }}
                     >
                       <option value="All">Todos los Médicos</option>
@@ -1363,25 +1400,129 @@ export default function App() {
                     </select>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            <div className="summary-grid">
-               <div className="card" style={{ margin: 0, padding: '24px', textAlign: 'center', background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--primary-dim) 100%)' }}>
-                  <Activity size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
-                  <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Progreso Plan</p>
-                  <p style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary-light)' }}>
+            {/* ── Dashboard Stats Grid — 4 tarjetas ── */}
+            <div className="dashboard-stats-grid">
+               <div className="card dashboard-stat-card" style={{ margin: 0, background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--primary-dim) 100%)' }}>
+                  <div className="dashboard-stat-icon" style={{ background: 'var(--primary-dim)' }}>
+                    <TrendingUp size={22} style={{ color: 'var(--primary-light)' }} />
+                  </div>
+                  <p className="dashboard-stat-label">Progreso General</p>
+                  <p className="dashboard-stat-value" style={{ color: 'var(--primary-light)' }}>
                     {filteredMeds.length ? Math.round(filteredMeds.reduce((acc, m) => acc + (m.dosesTaken || 0), 0) / filteredMeds.reduce((acc, m) => acc + ((m.durationDays || 1) * (m.timesPerDay || 1)), 0) * 100) : 0}%
                   </p>
+                  <div className="progress-container" style={{ height: '6px', margin: '8px 0 0', background: 'rgba(255,255,255,0.06)' }}>
+                    <div className="progress-bar" style={{ width: `${filteredMeds.length ? Math.round(filteredMeds.reduce((acc, m) => acc + (m.dosesTaken || 0), 0) / filteredMeds.reduce((acc, m) => acc + ((m.durationDays || 1) * (m.timesPerDay || 1)), 0) * 100) : 0}%` }}></div>
+                  </div>
                </div>
-               <div className="card" style={{ margin: 0, padding: '24px', textAlign: 'center' }}>
-                  <Clock size={20} style={{ color: 'var(--primary-light)', margin: '0 auto 8px' }} />
-                  <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>Tomas Hoy</p>
-                  <p style={{ fontSize: '2rem', fontWeight: 900 }}>
+               <div className="card dashboard-stat-card" style={{ margin: 0 }}>
+                  <div className="dashboard-stat-icon" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
+                    <Clock size={22} style={{ color: '#60a5fa' }} />
+                  </div>
+                  <p className="dashboard-stat-label">Tomas Hoy</p>
+                  <p className="dashboard-stat-value" style={{ color: '#60a5fa' }}>
                     {filteredMeds.reduce((acc, m) => acc + (m.lastResetDate === localToday() ? (m.takenTodayCount || 0) : 0), 0)}
+                  </p>
+                  <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, marginTop: '4px' }}>
+                    de {filteredMeds.reduce((acc, m) => { const totalN = (m.durationDays || 0) * (m.timesPerDay || 1); return acc + ((m.dosesTaken || 0) < totalN ? (m.timesPerDay || 1) : 0); }, 0)} programadas
+                  </p>
+               </div>
+               <div className="card dashboard-stat-card" style={{ margin: 0 }}>
+                  <div className="dashboard-stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)' }}>
+                    <Pill size={22} style={{ color: '#f59e0b' }} />
+                  </div>
+                  <p className="dashboard-stat-label">Planes Activos</p>
+                  <p className="dashboard-stat-value" style={{ color: '#f59e0b' }}>
+                    {statsAll.active}
+                  </p>
+                  <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, marginTop: '4px' }}>
+                    en tratamiento
+                  </p>
+               </div>
+               <div className="card dashboard-stat-card" style={{ margin: 0 }}>
+                  <div className="dashboard-stat-icon" style={{ background: 'rgba(16, 185, 129, 0.1)' }}>
+                    <CheckCircle2 size={22} style={{ color: '#10b981' }} />
+                  </div>
+                  <p className="dashboard-stat-label">Culminados</p>
+                  <p className="dashboard-stat-value" style={{ color: '#10b981' }}>
+                    {statsAll.completed}
+                  </p>
+                  <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 700, marginTop: '4px' }}>
+                    completados ✓
                   </p>
                </div>
             </div>
+
+            {/* ── Progress Overview Panel ── */}
+            {filteredMeds.length > 0 && (
+              <div className="progress-overview">
+                <div className="progress-overview-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Activity size={18} style={{ color: 'var(--primary-light)' }} />
+                    <h3 style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Avance de Planes</h3>
+                  </div>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                    {filteredMeds.length} {filteredMeds.length === 1 ? 'plan' : 'planes'}
+                  </span>
+                </div>
+                <div className="progress-overview-list">
+                  {[...filteredMeds]
+                    .sort((a, b) => {
+                      const pctA = Math.round(((a.dosesTaken || 0) / (((a.durationDays || 1) * (a.timesPerDay || 1)) || 1)) * 100);
+                      const pctB = Math.round(((b.dosesTaken || 0) / (((b.durationDays || 1) * (b.timesPerDay || 1)) || 1)) * 100);
+                      return pctB - pctA;
+                    })
+                    .map(med => {
+                      const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
+                      const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
+                      const isCompleted = (med.dosesTaken || 0) >= totalNeeded;
+                      return (
+                        <div key={med.id} className="progress-overview-item animate-fade">
+                          <div className="progress-overview-info">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                              <Pill size={14} style={{ color: isCompleted ? '#10b981' : 'var(--primary-light)', flexShrink: 0 }} />
+                              <span className="progress-overview-name" style={{ textDecoration: isCompleted ? 'line-through' : 'none', opacity: isCompleted ? 0.7 : 1 }}>
+                                {med.name.toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                              <span className={`progress-overview-badge ${isCompleted ? 'completed' : 'active'}`}>
+                                {isCompleted ? 'CULMINADO' : 'EN PROGRESO'}
+                              </span>
+                              <span className="progress-overview-pct" style={{ color: isCompleted ? '#10b981' : 'var(--primary-light)' }}>
+                                {progress}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="progress-overview-bar-bg">
+                            <div 
+                              className="progress-overview-bar-fill" 
+                              style={{ 
+                                width: `${progress}%`,
+                                background: isCompleted 
+                                  ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' 
+                                  : 'linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%)'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                            <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                              {med.dosesTaken || 0} / {totalNeeded} tomas
+                            </span>
+                            {med.pathology && (
+                              <span style={{ fontSize: '0.55rem', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
+                                {med.pathology}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '12px', marginBottom: '32px', flexWrap: 'wrap' }}>
               <button onClick={() => exportPDF()} className="btn-primary" style={{ flex: 1, minWidth: '200px', height: '56px', fontSize: '0.85rem' }}>
