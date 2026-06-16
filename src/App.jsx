@@ -1799,7 +1799,7 @@ export default function App() {
               <button 
                 onClick={() => {
                   if (meds.length === 0) {
-                    alert("Primero debes agregar al menos un plan de medicamento.");
+                    setErrorMessage("Primero debes agregar al menos un plan de medicamento.");
                     return;
                   }
                   setManualLogMedId(meds[0].id);
@@ -2331,7 +2331,7 @@ export default function App() {
                   >
                     {meds.map(med => (
                       <option key={med.id} value={med.id} style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
-                        {med.name.toUpperCase()} ({med.dosage})
+                        {med?.name?.toUpperCase() || 'Sin Nombre'} {med?.dosage ? `(${med.dosage})` : ''}
                       </option>
                     ))}
                   </select>
