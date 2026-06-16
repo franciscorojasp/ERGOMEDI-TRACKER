@@ -307,12 +307,16 @@ function doGet(e) {
           dosesTaken = dosesTaken + 1;
           medsSheet.getRange(mIdx + 1, 10).setValue(dosesTaken);
           
-          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : String(lastResetDate).split('T')[0];
+          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : (lastResetDate ? String(lastResetDate).split('T')[0] : '');
           var logDateStr = logDate instanceof Date ? logDate.toISOString().split('T')[0] : String(logDate).split('T')[0];
           
           if (logDateStr === lastResetDateStr) {
             takenTodayCount = takenTodayCount + 1;
             medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+          } else if (logDateStr > lastResetDateStr) {
+            takenTodayCount = 1;
+            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
+            medsSheet.getRange(mIdx + 1, 12).setValue(logDateStr);
           }
           break;
         }

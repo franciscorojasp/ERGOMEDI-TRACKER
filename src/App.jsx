@@ -659,6 +659,25 @@ export default function App() {
         date: manualLogDate
       };
 
+      // Optimistic Update
+      let newTakenToday = med.takenTodayCount || 0;
+      let newLastReset = med.lastResetDate || '';
+      if (manualLogDate === newLastReset) {
+        newTakenToday += 1;
+      } else if (manualLogDate > newLastReset) {
+        newTakenToday = 1;
+        newLastReset = manualLogDate;
+      }
+      
+      const updatedMed = {
+        ...med,
+        dosesTaken: (med.dosesTaken || 0) + 1,
+        takenTodayCount: newTakenToday,
+        lastResetDate: newLastReset,
+        lastTakenDate: manualLogDate >= newLastReset ? newTimestamp : med.lastTakenDate
+      };
+      setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
+
       await api.addManualHistoryLog(log, user.id, passTarget);
       setShowManualLogModal(false);
       setManualLogMedId("");
