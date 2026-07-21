@@ -19,8 +19,8 @@
 let _sentToday = {};
 let _lastResetDate = '';
 
-// Current config (phone + api key)
-let _config = { phone: '', waApiKey: '' };
+// Current config (phone + api key + notification flags)
+let _config = { phone: '', waApiKey: '', notifyWhatsapp: true };
 
 function _localDateStr() {
   const d = new Date();
@@ -157,7 +157,7 @@ function _checkMeds(meds) {
         _sendWebNotification(title, body);
 
         // Send WhatsApp via CallMeBot (works regardless of app state)
-        if (_config.phone && _config.waApiKey) {
+        if (_config.notifyWhatsapp && _config.phone && _config.waApiKey) {
           _sendWhatsApp(_config.phone, _config.waApiKey, waMsg);
         }
 
@@ -181,8 +181,9 @@ let _intervalHandle = null;
 export const setupNotifications = (meds, config = {}) => {
   // Always update config so WhatsApp alerts use the latest credentials
   _config = {
-    phone:    config.phone    || '',
-    waApiKey: config.waApiKey || '',
+    phone:          config.phone    || '',
+    waApiKey:       config.waApiKey || '',
+    notifyWhatsapp: config.notifyWhatsapp !== undefined ? config.notifyWhatsapp : true,
   };
 
   if (!('Notification' in window)) {
