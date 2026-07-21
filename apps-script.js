@@ -50,19 +50,17 @@ function setup() {
   var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
   if (!usersSheet) {
     var s = ss.insertSheet(USERS_SHEET_NAME);
-    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset','notifyEmail','notifyWhatsapp']);
-    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, true, true]);
-    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, true, true]);
+    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset']);
+    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240]);
+    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240]);
   } else {
     // Ensure new columns exist
     var headers = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
-    if (headers.indexOf('phone')          < 0) usersSheet.getRange(1, 6).setValue('phone');
-    if (headers.indexOf('waApiKey')       < 0) usersSheet.getRange(1, 7).setValue('waApiKey');
-    if (headers.indexOf('patientName')    < 0) usersSheet.getRange(1, 8).setValue('patientName');
-    if (headers.indexOf('doctorName')     < 0) usersSheet.getRange(1, 9).setValue('doctorName');
-    if (headers.indexOf('utcOffset')      < 0) usersSheet.getRange(1, 10).setValue('utcOffset');
-    if (headers.indexOf('notifyEmail')    < 0) usersSheet.getRange(1, 11).setValue('notifyEmail');
-    if (headers.indexOf('notifyWhatsapp') < 0) usersSheet.getRange(1, 12).setValue('notifyWhatsapp');
+    if (headers.indexOf('phone')       < 0) usersSheet.getRange(1, 6).setValue('phone');
+    if (headers.indexOf('waApiKey')    < 0) usersSheet.getRange(1, 7).setValue('waApiKey');
+    if (headers.indexOf('patientName') < 0) usersSheet.getRange(1, 8).setValue('patientName');
+    if (headers.indexOf('doctorName')  < 0) usersSheet.getRange(1, 9).setValue('doctorName');
+    if (headers.indexOf('utcOffset')   < 0) usersSheet.getRange(1, 10).setValue('utcOffset');
   }
 
   // Prescriptions folder
@@ -130,14 +128,12 @@ function doGet(e) {
       // New user - auto-register
       var newId = Utilities.getUuid();
       var role  = (identifier === ADMIN_EMAIL || identifier === ADMIN_PHONE) ? 'admin' : 'user';
-      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset, true, true]);
-      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset, notifyEmail: true, notifyWhatsapp: true };
+      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset]);
+      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset };
     } else {
       var rowIndex = data.indexOf(user) + 1;
       sheet.getRange(rowIndex, 4).setValue(new Date()); // lastLogin
       sheet.getRange(rowIndex, 10).setValue(utcOffset); // refresh utcOffset
-      var notifyEmail = user[10] !== undefined && user[10] !== '' ? (String(user[10]).toLowerCase() === 'true' || user[10] === true) : true;
-      var notifyWhatsapp = user[11] !== undefined && user[11] !== '' ? (String(user[11]).toLowerCase() === 'true' || user[11] === true) : true;
       result = {
         id:          user[0],
         identifier:  user[1],
@@ -147,9 +143,7 @@ function doGet(e) {
         waApiKey:    user[6]       || '',
         patientName: user[7]       || '',
         doctorName:  user[8]       || '',
-        utcOffset:   utcOffset,
-        notifyEmail: notifyEmail,
-        notifyWhatsapp: notifyWhatsapp
+        utcOffset:   utcOffset
       };
     }
   }
@@ -163,18 +157,14 @@ function doGet(e) {
       var usData  = usSheet.getDataRange().getValues();
       result = [];
       for (var ui = 1; ui < usData.length; ui++) {
-        var notifyEmailVal = usData[ui][10] !== undefined && usData[ui][10] !== '' ? (String(usData[ui][10]).toLowerCase() === 'true' || usData[ui][10] === true) : true;
-        var notifyWhatsappVal = usData[ui][11] !== undefined && usData[ui][11] !== '' ? (String(usData[ui][11]).toLowerCase() === 'true' || usData[ui][11] === true) : true;
         result.push({
-          id:             String(usData[ui][0]),
-          identifier:     String(usData[ui][1]),
-          role:           String(usData[ui][4] || 'user'),
-          phone:          String(usData[ui][5] || ''),
-          waApiKey:       String(usData[ui][6] || ''),
-          patientName:    String(usData[ui][7] || ''),
-          doctorName:     String(usData[ui][8] || ''),
-          notifyEmail:    notifyEmailVal,
-          notifyWhatsapp: notifyWhatsappVal
+          id:          String(usData[ui][0]),
+          identifier:  String(usData[ui][1]),
+          role:        String(usData[ui][4] || 'user'),
+          phone:       String(usData[ui][5] || ''),
+          waApiKey:    String(usData[ui][6] || ''),
+          patientName: String(usData[ui][7] || ''),
+          doctorName:  String(usData[ui][8] || '')
         });
       }
     }
@@ -206,8 +196,8 @@ function doGet(e) {
         } else {
           var newUUID = Utilities.getUuid();
           var utcOff  = parseInt(e.parameter.utcOffset) || 0;
-          cuSheet.appendRow([newUUID, newIdentifier, newName, new Date(), newRole, '', '', newName, '', utcOff, true, true]);
-          result = { success: true, id: newUUID, identifier: newIdentifier, patientName: newName, role: newRole, notifyEmail: true, notifyWhatsapp: true };
+          cuSheet.appendRow([newUUID, newIdentifier, newName, new Date(), newRole, '', '', newName, '', utcOff]);
+          result = { success: true, id: newUUID, identifier: newIdentifier, patientName: newName, role: newRole };
         }
       }
     }
@@ -222,14 +212,12 @@ function doGet(e) {
     var profile = JSON.parse(e.parameter.data);
     for (var j = 1; j < data2.length; j++) {
       if (String(data2[j][0]) === effectiveUpdateId) {
-        if (profile.name           !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
-        if (profile.phone          !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
-        if (profile.waApiKey       !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
-        if (profile.patientName    !== undefined) sheet2.getRange(j + 1, 8).setValue(profile.patientName);
-        if (profile.doctorName     !== undefined) sheet2.getRange(j + 1, 9).setValue(profile.doctorName);
-        if (profile.utcOffset      !== undefined) sheet2.getRange(j + 1, 10).setValue(profile.utcOffset);
-        if (profile.notifyEmail    !== undefined) sheet2.getRange(j + 1, 11).setValue(profile.notifyEmail);
-        if (profile.notifyWhatsapp !== undefined) sheet2.getRange(j + 1, 12).setValue(profile.notifyWhatsapp);
+        if (profile.name        !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
+        if (profile.phone       !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
+        if (profile.waApiKey    !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
+        if (profile.patientName !== undefined) sheet2.getRange(j + 1, 8).setValue(profile.patientName);
+        if (profile.doctorName  !== undefined) sheet2.getRange(j + 1, 9).setValue(profile.doctorName);
+        if (profile.utcOffset   !== undefined) sheet2.getRange(j + 1, 10).setValue(profile.utcOffset);
         break;
       }
     }
@@ -319,16 +307,12 @@ function doGet(e) {
           dosesTaken = dosesTaken + 1;
           medsSheet.getRange(mIdx + 1, 10).setValue(dosesTaken);
           
-          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : (lastResetDate ? String(lastResetDate).split('T')[0] : '');
+          var lastResetDateStr = lastResetDate instanceof Date ? Utilities.formatDate(lastResetDate, 'UTC', 'yyyy-MM-dd') : String(lastResetDate).split('T')[0];
           var logDateStr = logDate instanceof Date ? logDate.toISOString().split('T')[0] : String(logDate).split('T')[0];
           
           if (logDateStr === lastResetDateStr) {
             takenTodayCount = takenTodayCount + 1;
             medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
-          } else if (logDateStr > lastResetDateStr) {
-            takenTodayCount = 1;
-            medsSheet.getRange(mIdx + 1, 11).setValue(takenTodayCount);
-            medsSheet.getRange(mIdx + 1, 12).setValue(logDateStr);
           }
           break;
         }
@@ -574,8 +558,6 @@ function checkAndSendAlerts() {
     var apiKey      = String(userRow[6] || '');
     var patientName = String(userRow[7] || '');
     var utcOffset   = parseInt(userRow[9]) || 0;
-    var notifyEmail = userRow[10] !== undefined && userRow[10] !== '' ? (String(userRow[10]).toLowerCase() === 'true' || userRow[10] === true) : true;
-    var notifyWhatsapp = userRow[11] !== undefined && userRow[11] !== '' ? (String(userRow[11]).toLowerCase() === 'true' || userRow[11] === true) : true;
 
     // Calcular hora local del usuario usando su offset almacenado
     var localMs   = nowUtcMs + utcOffset * 60000;
@@ -661,12 +643,12 @@ function checkAndSendAlerts() {
           }
 
           // Email (canal principal)
-          if (notifyEmail && userEmail && userEmail.indexOf('@') >= 0) {
+          if (userEmail && userEmail.indexOf('@') >= 0) {
             try { MailApp.sendEmail({ to: userEmail, subject: subject, body: body }); } catch(err) {}
           }
 
           // WhatsApp via CallMeBot (canal secundario)
-          if (notifyWhatsapp && phone && apiKey) sendWhatsAppMessage(phone, waMsg, apiKey);
+          if (phone && apiKey) sendWhatsAppMessage(phone, waMsg, apiKey);
 
           // Almacenar el timestamp de envío en la caché
           sentAlerts[dedupeKey] = nowUtcMs;

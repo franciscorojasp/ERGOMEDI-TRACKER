@@ -12,7 +12,6 @@ import 'jspdf-autotable';
 import { api } from './api';
 import { setupNotifications, shareToWhatsApp, testWhatsApp } from './notifications';
 
-
 const getDriveImageUrl = (url) => {
   if (!url) return null;
   if (!url.includes('drive.google.com')) return url;
@@ -293,12 +292,11 @@ export default function App() {
         return (m.dosesTaken || 0) < totalNeeded;
       });
       setupNotifications(activePlansForNotifications, {
-        phone:          user.phone    || '',
-        waApiKey:       user.waApiKey || '',
-        notifyWhatsapp: user.notifyWhatsapp !== false,
+        phone:    user.phone    || '',
+        waApiKey: user.waApiKey || '',
       });
     }
-  }, [meds, user?.phone, user?.waApiKey, user?.notifyWhatsapp, viewingUserId, user?.id]);
+  }, [meds, user?.phone, user?.waApiKey, viewingUserId, user?.id]);
 
   const handleInstallPWA = async () => {
     if (!installPromptEvent) return;
@@ -661,25 +659,6 @@ export default function App() {
         date: manualLogDate
       };
 
-      // Optimistic Update
-      let newTakenToday = med.takenTodayCount || 0;
-      let newLastReset = med.lastResetDate || '';
-      if (manualLogDate === newLastReset) {
-        newTakenToday += 1;
-      } else if (manualLogDate > newLastReset) {
-        newTakenToday = 1;
-        newLastReset = manualLogDate;
-      }
-      
-      const updatedMed = {
-        ...med,
-        dosesTaken: (med.dosesTaken || 0) + 1,
-        takenTodayCount: newTakenToday,
-        lastResetDate: newLastReset,
-        lastTakenDate: manualLogDate >= newLastReset ? newTimestamp : med.lastTakenDate
-      };
-      setMeds(meds.map(m => m.id === med.id ? updatedMed : m));
-
       await api.addManualHistoryLog(log, user.id, passTarget);
       setShowManualLogModal(false);
       setManualLogMedId("");
@@ -1004,20 +983,6 @@ export default function App() {
         return updated;
       });
     }
-  };
-
-  const handleToggleNotifyEmail = async () => {
-    const currentValue = activeProfile.notifyEmail !== false;
-    const newValue = !currentValue;
-    handleProfileFieldChange('notifyEmail', newValue);
-    await updateProfile({ notifyEmail: newValue });
-  };
-
-  const handleToggleNotifyWhatsapp = async () => {
-    const currentValue = activeProfile.notifyWhatsapp !== false;
-    const newValue = !currentValue;
-    handleProfileFieldChange('notifyWhatsapp', newValue);
-    await updateProfile({ notifyWhatsapp: newValue });
   };
 
 
@@ -1815,7 +1780,7 @@ export default function App() {
               <button 
                 onClick={() => {
                   if (meds.length === 0) {
-                    setErrorMessage("Primero debes agregar al menos un plan de medicamento.");
+                    alert("Primero debes agregar al menos un plan de medicamento.");
                     return;
                   }
                   setManualLogMedId(meds[0].id);
@@ -2084,48 +2049,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* ── CANALES DE ALERTA Y RECORDATORIOS ── */}
-                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>
-                      Canales de Alerta y Recordatorios
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      
-                      {/* Correo Switch */}
-                      <div className="switch-container">
-                        <div className="switch-label">
-                          <span className="switch-title">Recordatorios por Correo</span>
-                          <span className="switch-desc">Enviar alertas a {activeProfile.identifier}</span>
-                        </div>
-                        <label className="switch-toggle">
-                          <input 
-                            type="checkbox" 
-                            checked={activeProfile.notifyEmail !== false} 
-                            onChange={handleToggleNotifyEmail} 
-                          />
-                          <span className="switch-slider"></span>
-                        </label>
-                      </div>
-
-                      {/* WhatsApp Switch */}
-                      <div className="switch-container">
-                        <div className="switch-label">
-                          <span className="switch-title">Recordatorios por WhatsApp</span>
-                          <span className="switch-desc">Enviar alertas al número configurado</span>
-                        </div>
-                        <label className="switch-toggle">
-                          <input 
-                            type="checkbox" 
-                            checked={activeProfile.notifyWhatsapp !== false} 
-                            onChange={handleToggleNotifyWhatsapp} 
-                          />
-                          <span className="switch-slider"></span>
-                        </label>
-                      </div>
-
-                    </div>
-                  </div>
-
                   {/* ── NOTIFICACIONES WHATSAPP ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
@@ -2389,7 +2312,7 @@ export default function App() {
                   >
                     {meds.map(med => (
                       <option key={med.id} value={med.id} style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
-                        {med?.name?.toUpperCase() || 'Sin Nombre'} {med?.dosage ? `(${med.dosage})` : ''}
+                        {med.name.toUpperCase()} ({med.dosage})
                       </option>
                     ))}
                   </select>

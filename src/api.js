@@ -248,13 +248,10 @@ export const api = {
       const medIndex = meds.findIndex(m => m.id === log.medId);
       if (medIndex > -1) {
         meds[medIndex].dosesTaken = (meds[medIndex].dosesTaken || 0) + 1;
-        const lastReset = meds[medIndex].lastResetDate || '';
-        const logDateStr = log.date;
-        if (logDateStr === lastReset) {
+        const lastReset = meds[medIndex].lastResetDate;
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (lastReset === todayStr) {
           meds[medIndex].takenTodayCount = (meds[medIndex].takenTodayCount || 0) + 1;
-        } else if (logDateStr > lastReset) {
-          meds[medIndex].takenTodayCount = 1;
-          meds[medIndex].lastResetDate = logDateStr;
         }
         this.syncLocalMeds(meds);
       }
