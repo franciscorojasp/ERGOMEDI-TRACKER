@@ -1912,7 +1912,7 @@ export default function App() {
 
                   {/* ── DATOS DEL PACIENTE ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Datos para Reportes PDF</p>
+                    <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Datos del Paciente</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div className="input-group">
                         <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
@@ -1927,6 +1927,40 @@ export default function App() {
                           onBlur={() => updateProfile({ patientName: activeProfile.patientName })}
                           style={{ background: 'var(--bg-main)' }}
                         />
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <Mail size={14} style={{ display: 'inline', marginRight: '5px' }} /> CORREO ELECTRÓNICO
+                        </label>
+                        <input
+                          type="email"
+                          className="input-field"
+                          placeholder="Ej: paciente@correo.com"
+                          value={activeProfile.identifier || ''}
+                          onChange={e => handleProfileFieldChange('identifier', e.target.value)}
+                          onBlur={() => updateProfile({ identifier: activeProfile.identifier })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                        <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                          📧 Este correo se usa para iniciar sesión y recibir alertas por email.
+                        </p>
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TELÉFONO PERSONAL
+                        </label>
+                        <input
+                          type="tel"
+                          className="input-field"
+                          placeholder="Ej: +58424xxxxxxx"
+                          value={activeProfile.phone || ''}
+                          onChange={e => handleProfileFieldChange('phone', e.target.value)}
+                          onBlur={() => updateProfile({ phone: activeProfile.phone })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                        <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                          📱 Número con código de país. También se usa para alertas WhatsApp si está configurado abajo.
+                        </p>
                       </div>
                     </div>
                   </div>

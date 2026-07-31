@@ -212,6 +212,7 @@ function doGet(e) {
     var profile = JSON.parse(e.parameter.data);
     for (var j = 1; j < data2.length; j++) {
       if (String(data2[j][0]) === effectiveUpdateId) {
+        if (profile.identifier  !== undefined) sheet2.getRange(j + 1, 2).setValue(profile.identifier);
         if (profile.name        !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
         if (profile.phone       !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
         if (profile.waApiKey    !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
