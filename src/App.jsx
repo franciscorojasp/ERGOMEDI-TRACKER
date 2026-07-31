@@ -10,7 +10,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { api } from './api';
-import { setupNotifications, shareToWhatsApp, testWhatsApp } from './notifications';
+import { setupNotifications, shareToWhatsApp, testWhatsApp, testWebPush } from './notifications';
 
 const getDriveImageUrl = (url) => {
   if (!url) return null;
@@ -2184,6 +2184,142 @@ export default function App() {
                         style={{ background: 'var(--bg-main)', border: '1px solid #25D366', color: '#25D366', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
                       >
                         <Send size={16} /> PROBAR AHORA
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── ALERTAS POR SMS (Email-to-SMS Gateway Gratis) ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                        Alertas por SMS (Vía Operadora) <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Costo $0</span>
+                      </p>
+                      <span style={{
+                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
+                        textTransform: 'uppercase', letterSpacing: '0.5px',
+                        background: (activeProfile.phone && activeProfile.smsCarrier) ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.08)',
+                        color: (activeProfile.phone && activeProfile.smsCarrier) ? '#0fe0e0' : 'var(--text-muted)',
+                        border: `1px solid ${(activeProfile.phone && activeProfile.smsCarrier) ? 'rgba(15,224,224,0.3)' : 'var(--border)'}`,
+                      }}>
+                        {(activeProfile.phone && activeProfile.smsCarrier) ? '● Configurado' : '○ Sin configurar'}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      background: 'rgba(15,224,224,0.05)', borderRadius: '12px',
+                      border: '1px solid rgba(15,224,224,0.2)', padding: '14px', marginBottom: '16px',
+                    }}>
+                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#0fe0e0', marginBottom: '6px', letterSpacing: '0.5px' }}>
+                        📱 ¿CÓMO FUNCIONA EL SMS COSTO $0?
+                      </p>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                        Las operadoras convierten correos electrónicos dirigidos a tu número en <strong>mensajes de texto SMS reales</strong> en tu celular. Al seleccionar tu operadora telefónica abajo, el sistema te enviará alertas SMS directamente a tu teléfono sin costo de suscripción.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <Globe size={14} style={{ display: 'inline', marginRight: '5px' }} /> OPERADORA TELEFÓNICA (Servicio SMS)
+                        </label>
+                        <select
+                          className="input-field"
+                          value={
+                            ['sms.digitel.com.ve', 'sms.movistar.com.ve', 'sms.movilnet.com.ve', 'txt.att.net', 'tmomail.net', 'vtext.com', ''].includes(activeProfile.smsCarrier || '')
+                              ? (activeProfile.smsCarrier || '')
+                              : 'custom'
+                          }
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val !== 'custom') {
+                              handleProfileFieldChange('smsCarrier', val);
+                              updateProfile({ smsCarrier: val });
+                            } else {
+                              handleProfileFieldChange('smsCarrier', '@');
+                            }
+                          }}
+                          style={{ background: 'var(--bg-main)' }}
+                        >
+                          <option value="">-- Seleccionar Operadora --</option>
+                          <option value="sms.digitel.com.ve">🇻🇪 Digitel Venezuela (sms.digitel.com.ve)</option>
+                          <option value="sms.movistar.com.ve">🇻🇪 Movistar Venezuela (sms.movistar.com.ve)</option>
+                          <option value="sms.movilnet.com.ve">🇻🇪 Movilnet Venezuela (sms.movilnet.com.ve)</option>
+                          <option value="txt.att.net">🇺🇸 AT&T (txt.att.net)</option>
+                          <option value="tmomail.net">🇺🇸 T-Mobile (tmomail.net)</option>
+                          <option value="vtext.com">🇺🇸 Verizon (vtext.com)</option>
+                          <option value="custom">✏️ Otra Operadora / Dominio Personalizado</option>
+                        </select>
+                      </div>
+
+                      {(!['sms.digitel.com.ve', 'sms.movistar.com.ve', 'sms.movilnet.com.ve', 'txt.att.net', 'tmomail.net', 'vtext.com', ''].includes(activeProfile.smsCarrier || '')) && (
+                        <div className="input-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                            DOMINIO EMAIL-TO-SMS PERSONALIZADO
+                          </label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Ej: sms.operadora.com"
+                            value={activeProfile.smsCarrier || ''}
+                            onChange={e => handleProfileFieldChange('smsCarrier', e.target.value)}
+                            onBlur={() => updateProfile({ smsCarrier: activeProfile.smsCarrier })}
+                            style={{ background: 'var(--bg-main)' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── NOTIFICACIONES PUSH PWA ── */}
+                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                        Notificaciones Push PWA <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Pantalla de Inicio</span>
+                      </p>
+                      <span style={{
+                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
+                        textTransform: 'uppercase', letterSpacing: '0.5px',
+                        background: (typeof Notification !== 'undefined' && Notification.permission === 'granted') ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.08)',
+                        color: (typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '#0fe0e0' : 'var(--text-muted)',
+                        border: `1px solid ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? 'rgba(15,224,224,0.3)' : 'var(--border)'}`,
+                      }}>
+                        {(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '● Activas' : '○ Desactivadas'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (typeof Notification === 'undefined') {
+                            alert('Tu navegador no soporta notificaciones push.');
+                            return;
+                          }
+                          const perm = await Notification.requestPermission();
+                          if (perm === 'granted') {
+                            alert('✅ Permiso de notificaciones concedido exitosamente.');
+                          } else {
+                            alert('⚠️ Permiso denegado. Habilita las notificaciones en la configuración de tu navegador.');
+                          }
+                        }}
+                        className="btn-primary"
+                        style={{ background: 'var(--primary)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                      >
+                        <Bell size={16} /> PERMITIR NOTIFICACIONES PUSH
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await testWebPush();
+                          if (!res) {
+                            alert('Habilita primero los permisos de notificaciones para probar.');
+                          }
+                        }}
+                        className="btn-primary"
+                        style={{ background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                      >
+                        <Send size={16} /> PROBAR PUSH
                       </button>
                     </div>
                   </div>

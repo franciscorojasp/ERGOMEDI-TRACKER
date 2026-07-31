@@ -61,6 +61,7 @@ function setup() {
     if (headers.indexOf('patientName') < 0) usersSheet.getRange(1, 8).setValue('patientName');
     if (headers.indexOf('doctorName')  < 0) usersSheet.getRange(1, 9).setValue('doctorName');
     if (headers.indexOf('utcOffset')   < 0) usersSheet.getRange(1, 10).setValue('utcOffset');
+    if (headers.indexOf('smsCarrier')  < 0) usersSheet.getRange(1, 11).setValue('smsCarrier');
   }
 
   // Prescriptions folder
@@ -143,7 +144,8 @@ function doGet(e) {
         waApiKey:    user[6]       || '',
         patientName: user[7]       || '',
         doctorName:  user[8]       || '',
-        utcOffset:   utcOffset
+        utcOffset:   utcOffset,
+        smsCarrier:  user[10]      || ''
       };
     }
   }
@@ -164,7 +166,8 @@ function doGet(e) {
           phone:       String(usData[ui][5] || ''),
           waApiKey:    String(usData[ui][6] || ''),
           patientName: String(usData[ui][7] || ''),
-          doctorName:  String(usData[ui][8] || '')
+          doctorName:  String(usData[ui][8] || ''),
+          smsCarrier:  String(usData[ui][10] || '')
         });
       }
     }
@@ -219,6 +222,7 @@ function doGet(e) {
         if (profile.patientName !== undefined) sheet2.getRange(j + 1, 8).setValue(profile.patientName);
         if (profile.doctorName  !== undefined) sheet2.getRange(j + 1, 9).setValue(profile.doctorName);
         if (profile.utcOffset   !== undefined) sheet2.getRange(j + 1, 10).setValue(profile.utcOffset);
+        if (profile.smsCarrier  !== undefined) sheet2.getRange(j + 1, 11).setValue(profile.smsCarrier);
         break;
       }
     }
@@ -559,6 +563,7 @@ function checkAndSendAlerts() {
     var apiKey      = String(userRow[6] || '');
     var patientName = String(userRow[7] || '');
     var utcOffset   = parseInt(userRow[9]) || 0;
+    var smsCarrier  = String(userRow[10] || '');
 
     // Calcular hora local del usuario usando su offset almacenado
     var localMs   = nowUtcMs + utcOffset * 60000;
@@ -615,7 +620,7 @@ function checkAndSendAlerts() {
           if (sentAlerts[dedupeKey]) continue;
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
-          var subject = '', body = '', waMsg = '';
+          var subject = '', body = '', waMsg = '', smsBody = '';
 
           if (alert.offset === -10) {
             subject = '[10 min] ' + medName;
@@ -625,6 +630,7 @@ function checkAndSendAlerts() {
                       '- Hora: ' + scheduledTime + '\n\n' +
                       'Prepara tu medicación con anticipación.\n\n-- ERGOMEDI-TRACKER';
             waMsg   = '(10 min) ' + greeting + ' En 10 minutos debes tomar *' + medName + '* (' + dosage + ') a las ' + scheduledTime + '. ¡Prepárala!';
+            smsBody = 'ERGOMEDI SMS: En 10 min toma ' + medName + ' (' + dosage + ') - ' + scheduledTime;
           } else if (alert.offset === -5) {
             subject = '[5 min] ' + medName;
             body    = greeting + '\n\nEn 5 minutos es hora de tomar:\n\n' +
@@ -633,6 +639,7 @@ function checkAndSendAlerts() {
                       '- Hora: ' + scheduledTime + '\n\n' +
                       '¡No lo olvides!\n\n-- ERGOMEDI-TRACKER';
             waMsg   = '(5 min) Faltan 5 minutos para tomar *' + medName + '* (' + dosage + ').';
+            smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')';
           } else {
             subject = '[AHORA] ' + medName;
             body    = greeting + '\n\n¡Es el momento de tu medicamento!\n\n' +
@@ -641,6 +648,7 @@ function checkAndSendAlerts() {
                       '- Hora: ' + scheduledTime + '\n\n' +
                       'Abre ERGOMEDI-TRACKER y confirma la toma.\n\n-- ERGOMEDI-TRACKER';
             waMsg   = '(¡ES HORA! ERGOMEDI): ' + greeting + ' Toma tu dosis de *' + medName + '* (' + dosage + ') ahora mismo.';
+            smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ') ahora';
           }
 
           // Email (canal principal)
@@ -650,6 +658,15 @@ function checkAndSendAlerts() {
 
           // WhatsApp via CallMeBot (canal secundario)
           if (phone && apiKey) sendWhatsAppMessage(phone, waMsg, apiKey);
+
+          // SMS via Email-to-SMS Gateway (100% costo cero)
+          if (phone && smsCarrier) {
+            var cleanPhone = phone.replace(/[^0-9]/g, '');
+            var smsDomain  = smsCarrier.trim();
+            if (smsDomain.indexOf('@') < 0) smsDomain = '@' + smsDomain;
+            var smsTarget = cleanPhone + smsDomain;
+            try { MailApp.sendEmail({ to: smsTarget, subject: 'ERGOMEDI SMS', body: smsBody }); } catch(err) {}
+          }
 
           // Almacenar el timestamp de envío en la caché
           sentAlerts[dedupeKey] = nowUtcMs;

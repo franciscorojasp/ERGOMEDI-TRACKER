@@ -42,8 +42,23 @@ function _addMins(timeStr, mins) {
 }
 
 /** Send a Web Push Notification if permission granted */
-function _sendWebNotification(title, body) {
+async function _sendWebNotification(title, body) {
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          reg.showNotification(title, {
+            body,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            vibrate: [200, 100, 200],
+            tag: 'ergomedi-alert'
+          });
+          return;
+        }
+      }
+    } catch (_) {}
     new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
   }
 }
@@ -236,3 +251,22 @@ export const testWhatsApp = async (phone, apikey) => {
   await _sendWhatsApp(phone, apikey, msg);
   return true;
 };
+
+/**
+ * Send a test Web Push notification to verify PWA push notifications on screen.
+ */
+export const testWebPush = async () => {
+  if (typeof Notification === 'undefined') return false;
+  let perm = Notification.permission;
+  if (perm === 'default') {
+    perm = await Notification.requestPermission();
+  }
+  if (perm !== 'granted') return false;
+
+  await _sendWebNotification(
+    '🔔 ERGOMEDI-TRACKER — Alerta de Prueba',
+    'Las notificaciones Push PWA están activas en tu dispositivo.'
+  );
+  return true;
+};
+
