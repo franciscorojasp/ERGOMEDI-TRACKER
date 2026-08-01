@@ -622,6 +622,27 @@ function checkAndSendAlerts() {
     return Utilities.formatDate(d, 'UTC', 'HH:mm');
   }
 
+  function formatTime12h(timeStr) {
+    if (!timeStr) return '';
+    var parts = timeStr.split(':');
+    var h = parseInt(parts[0]);
+    var m = parts[1];
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12;
+    if (h12 === 0) h12 = 12;
+    return (h12 < 10 ? '0' + h12 : h12) + ':' + m + ' ' + ampm;
+  }
+
+  function getTimezoneLabel(offsetMins) {
+    if (offsetMins === -240) return 'Hora Legal de Venezuela (VET / UTC-4)';
+    var sign = offsetMins >= 0 ? '+' : '-';
+    var abs = Math.abs(offsetMins);
+    var hrs = Math.floor(abs / 60);
+    var mins = abs % 60;
+    var str = 'UTC' + sign + hrs + (mins ? (':' + (mins < 10 ? '0' + mins : mins)) : '');
+    return 'Hora Local del Dispositivo (' + str + ')';
+  }
+
   for (var u = 1; u < usersData.length; u++) {
     var userRow         = usersData[u];
     var userId          = String(userRow[0]);
@@ -629,10 +650,15 @@ function checkAndSendAlerts() {
     var phone           = String(userRow[5] || '');
     var apiKey          = String(userRow[6] || '');
     var patientName     = String(userRow[7] || '');
-    var utcOffset       = parseInt(userRow[9]) || 0;
+    var rawOffset       = userRow[9];
     var smsCarrier      = String(userRow[10] || '');
     var storedEmail     = String(userRow[11] || '').trim();
     var telegramChatIds = String(userRow[12] || '').trim();
+
+    // Si utcOffset no está definido o es 0/inválido, por defecto usar Hora Legal de Venezuela (UTC-4 -> -240 mins)
+    var utcOffset = (rawOffset !== '' && rawOffset !== null && rawOffset !== undefined && !isNaN(parseInt(rawOffset)))
+                    ? parseInt(rawOffset)
+                    : -240;
 
     var userEmail = storedEmail || (identifierVal.indexOf('@') >= 0 ? identifierVal : '');
 
@@ -690,20 +716,24 @@ function checkAndSendAlerts() {
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
           var subject = '', body = '', tgMsg = '', smsBody = '';
+          var time12h = formatTime12h(scheduledTime);
+          var tzLabel = getTimezoneLabel(utcOffset);
 
           if (alert.offset === -10) {
             subject = '[10 min] ' + medName;
             body    = greeting + '\n\nEn 10 minutos es hora de tomar:\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
-                      '- Hora: ' + scheduledTime + '\n\n' +
+                      '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
+                      '- Zona horaria: ' + tzLabel + '\n\n' +
                       'Prepara tu medicación con anticipación.\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⏰ <b>ERGOMEDI-TRACKER — En 10 minutos</b>\n\n' +
-                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
                       '💊 Medicamento: <b>' + medName + '</b>\n' +
                       '💉 Dosis: ' + dosage + '\n' +
-                      '🕐 Hora: ' + scheduledTime + '\n\n' +
+                      '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
+                      '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
                       '<i>Prepara la medicación con anticipación.</i>';
             smsBody = 'ERGOMEDI SMS: En 10 min toma ' + medName + ' (' + dosage + ') - ' + scheduledTime;
           } else if (alert.offset === -5) {
@@ -711,14 +741,16 @@ function checkAndSendAlerts() {
             body    = greeting + '\n\nEn 5 minutos es hora de tomar:\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
-                      '- Hora: ' + scheduledTime + '\n\n' +
+                      '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
+                      '- Zona horaria: ' + tzLabel + '\n\n' +
                       '¡No lo olvides!\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⚠️ <b>ERGOMEDI-TRACKER — En 5 minutos</b>\n\n' +
-                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
                       '💊 Medicamento: <b>' + medName + '</b>\n' +
                       '💉 Dosis: ' + dosage + '\n' +
-                      '🕐 Hora: ' + scheduledTime + '\n\n' +
+                      '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
+                      '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
                       '<i>Ten la dosis lista para tomar.</i>';
             smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')';
           } else {
@@ -726,14 +758,16 @@ function checkAndSendAlerts() {
             body    = greeting + '\n\n¡Es el momento de tu medicamento!\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
-                      '- Hora: ' + scheduledTime + '\n\n' +
+                      '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
+                      '- Zona horaria: ' + tzLabel + '\n\n' +
                       'Abre ERGOMEDI-TRACKER y confirma la toma.\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '💊 <b>¡ES HORA DE TU MEDICAMENTO!</b>\n\n' +
-                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
                       '📋 Medicamento: <b>' + medName + '</b>\n' +
                       '💉 Dosis: ' + dosage + '\n' +
-                      '🕐 Hora: ' + scheduledTime + '\n' +
+                      '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
+                      '🌐 Zona horaria: <i>' + tzLabel + '</i>\n' +
                       (pathol ? ('🏥 Condición: ' + pathol + '\n') : '') +
                       '\n✅ Abre ERGOMEDI-TRACKER para confirmar la toma.';
             smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ') ahora';
