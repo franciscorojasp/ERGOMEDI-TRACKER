@@ -517,10 +517,9 @@ export default function App() {
     }
   };
 
-  const updateProfile = async (profileData, silent = false, targetOverride = null) => {
+  const updateProfile = async (profileData, silent = true, targetOverride = null) => {
     if (!user) return;
     const targetId = targetOverride || (isViewingOtherPatient ? effectiveUserId : null);
-    if (!silent) setLoading(true);
     try {
       const res = await api.updateProfile(user.id, profileData, targetId);
       if (res.success) {
@@ -538,8 +537,6 @@ export default function App() {
       }
     } catch (err) {
       if (!silent) setErrorMessage("Error al actualizar perfil.");
-    } finally {
-      if (!silent) setLoading(false);
     }
   };
 
