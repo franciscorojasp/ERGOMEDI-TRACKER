@@ -1,22 +1,22 @@
 /**
- * ERGOMEDI-TRACKER Backend - Google Only (No Firebase)
- * Version 7: Multi-usuario con timezone por usuario, nombre de paciente y medico
+ * ERGOMEDI-TRACKER Backend - Google Apps Script
+ * Version 8: Multi-usuario con Timezone, Notificaciones Telegram Multi-Cuidadores, Email y Web Push
  *
  * COLUMNAS USERS:
  *   [0] id | [1] identifier | [2] name (legacy) | [3] lastLogin | [4] role
  *   [5] phone | [6] waApiKey | [7] patientName | [8] doctorName | [9] utcOffset
- *
- * utcOffset: offset en MINUTOS respecto a UTC (Venezuela UTC-4 -> -240)
- *            Lo envia el cliente con cada peticion como -new Date().getTimezoneOffset()
+ *   [10] smsCarrier | [11] email | [12] telegramChatIds
  */
 
 var MEDS_SHEET_NAME    = 'medications';
 var HISTORY_SHEET_NAME = 'history';
 var USERS_SHEET_NAME   = 'users';
+var PUSH_SHEET_NAME    = 'push_subscriptions';
 var FOLDER_NAME        = 'ERGOMEDI_PRESCRIPTIONS';
 
 var ADMIN_EMAIL = 'francisco.rojasp@gmail.com';
 var ADMIN_PHONE = '+584244736489';
+var TELEGRAM_BOT_TOKEN = '8318969420:AAF44mtS301UzX3j30CgxaXcJBAOSEfONAg';
 
 // ==========================================================
 // setup() - Ejecutar UNA vez desde el editor de Apps Script
@@ -50,18 +50,25 @@ function setup() {
   var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
   if (!usersSheet) {
     var s = ss.insertSheet(USERS_SHEET_NAME);
-    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset']);
-    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240]);
-    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240]);
+    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset','smsCarrier','email','telegramChatIds']);
+    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '']);
+    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '']);
   } else {
     // Ensure new columns exist
     var headers = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
-    if (headers.indexOf('phone')       < 0) usersSheet.getRange(1, 6).setValue('phone');
-    if (headers.indexOf('waApiKey')    < 0) usersSheet.getRange(1, 7).setValue('waApiKey');
-    if (headers.indexOf('patientName') < 0) usersSheet.getRange(1, 8).setValue('patientName');
-    if (headers.indexOf('doctorName')  < 0) usersSheet.getRange(1, 9).setValue('doctorName');
-    if (headers.indexOf('utcOffset')   < 0) usersSheet.getRange(1, 10).setValue('utcOffset');
-    if (headers.indexOf('smsCarrier')  < 0) usersSheet.getRange(1, 11).setValue('smsCarrier');
+    if (headers.indexOf('phone')           < 0) usersSheet.getRange(1, 6).setValue('phone');
+    if (headers.indexOf('waApiKey')        < 0) usersSheet.getRange(1, 7).setValue('waApiKey');
+    if (headers.indexOf('patientName')     < 0) usersSheet.getRange(1, 8).setValue('patientName');
+    if (headers.indexOf('doctorName')      < 0) usersSheet.getRange(1, 9).setValue('doctorName');
+    if (headers.indexOf('utcOffset')       < 0) usersSheet.getRange(1, 10).setValue('utcOffset');
+    if (headers.indexOf('smsCarrier')      < 0) usersSheet.getRange(1, 11).setValue('smsCarrier');
+    if (headers.indexOf('email')           < 0) usersSheet.getRange(1, 12).setValue('email');
+    if (headers.indexOf('telegramChatIds') < 0) usersSheet.getRange(1, 13).setValue('telegramChatIds');
+  }
+
+  // Push subscriptions sheet
+  if (!ss.getSheetByName(PUSH_SHEET_NAME)) {
+    ss.insertSheet(PUSH_SHEET_NAME).appendRow(['id', 'userId', 'endpoint', 'p256dh', 'auth', 'updatedAt']);
   }
 
   // Prescriptions folder
@@ -74,9 +81,6 @@ function setup() {
 // Helpers de autorización por rol
 // ==========================================================
 
-/**
- * Devuelve true si el userId dado tiene role='admin' en la hoja de usuarios.
- */
 function isAdminUser(ss, userId) {
   var sheet = ss.getSheetByName(USERS_SHEET_NAME);
   var data  = sheet.getDataRange().getValues();
@@ -88,10 +92,6 @@ function isAdminUser(ss, userId) {
   return false;
 }
 
-/**
- * Si el solicitante es admin y provee un targetUserId diferente,
- * devuelve targetUserId. Si no, devuelve requestingUserId.
- */
 function getEffectiveUserId(ss, requestingUserId, targetUserId) {
   if (!targetUserId || String(targetUserId) === String(requestingUserId)) {
     return String(requestingUserId);
@@ -99,7 +99,36 @@ function getEffectiveUserId(ss, requestingUserId, targetUserId) {
   if (isAdminUser(ss, requestingUserId)) {
     return String(targetUserId);
   }
-  return String(requestingUserId); // No admin: ignora targetUserId
+  return String(requestingUserId);
+}
+
+// ==========================================================
+// sendTelegramAlerts - Envío a múltiples Chat IDs (Paciente + Cuidadores)
+// ==========================================================
+function sendTelegramAlerts(chatIdsStr, htmlText) {
+  if (!chatIdsStr || !TELEGRAM_BOT_TOKEN) return 0;
+  var ids = String(chatIdsStr).split(/[\s,;]+/);
+  var count = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var cid = ids[i].trim();
+    if (!cid) continue;
+    var url = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
+    var payload = {
+      chat_id: cid,
+      text: htmlText,
+      parse_mode: 'HTML'
+    };
+    try {
+      var resp = UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      if (resp.getResponseCode() === 200) count++;
+    } catch(e) {}
+  }
+  return count;
 }
 
 // ==========================================================
@@ -108,7 +137,7 @@ function getEffectiveUserId(ss, requestingUserId, targetUserId) {
 function doGet(e) {
   var action         = e.parameter.action;
   var userId         = e.parameter.userId;
-  var targetUserId   = e.parameter.targetUserId || userId;  // admin puede pasar otro userId
+  var targetUserId   = e.parameter.targetUserId || userId;
   var callback       = e.parameter.callback;
   var ss             = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -129,23 +158,30 @@ function doGet(e) {
       // New user - auto-register
       var newId = Utilities.getUuid();
       var role  = (identifier === ADMIN_EMAIL || identifier === ADMIN_PHONE) ? 'admin' : 'user';
-      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset]);
-      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset };
+      var initialEmail = identifier.indexOf('@') >= 0 ? identifier : '';
+      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset, '', initialEmail, '']);
+      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset, email: initialEmail, telegramChatIds: '' };
     } else {
       var rowIndex = data.indexOf(user) + 1;
       sheet.getRange(rowIndex, 4).setValue(new Date()); // lastLogin
       sheet.getRange(rowIndex, 10).setValue(utcOffset); // refresh utcOffset
+      
+      var storedEmail = String(user[11] || '').trim();
+      var resolvedEmail = storedEmail || (String(user[1]).indexOf('@') >= 0 ? String(user[1]) : '');
+      
       result = {
-        id:          user[0],
-        identifier:  user[1],
-        name:        user[2],
-        role:        user[4],
-        phone:       user[5]       || '',
-        waApiKey:    user[6]       || '',
-        patientName: user[7]       || '',
-        doctorName:  user[8]       || '',
-        utcOffset:   utcOffset,
-        smsCarrier:  user[10]      || ''
+        id:              user[0],
+        identifier:      user[1],
+        name:            user[2],
+        role:            user[4],
+        phone:           user[5]              || '',
+        waApiKey:        user[6]              || '',
+        patientName:     user[7]              || '',
+        doctorName:      user[8]              || '',
+        utcOffset:       utcOffset,
+        smsCarrier:      user[10]             || '',
+        email:           resolvedEmail,
+        telegramChatIds: user[12]             || ''
       };
     }
   }
@@ -159,15 +195,18 @@ function doGet(e) {
       var usData  = usSheet.getDataRange().getValues();
       result = [];
       for (var ui = 1; ui < usData.length; ui++) {
+        var uEmail = String(usData[ui][11] || '').trim() || (String(usData[ui][1]).indexOf('@') >= 0 ? String(usData[ui][1]) : '');
         result.push({
-          id:          String(usData[ui][0]),
-          identifier:  String(usData[ui][1]),
-          role:        String(usData[ui][4] || 'user'),
-          phone:       String(usData[ui][5] || ''),
-          waApiKey:    String(usData[ui][6] || ''),
-          patientName: String(usData[ui][7] || ''),
-          doctorName:  String(usData[ui][8] || ''),
-          smsCarrier:  String(usData[ui][10] || '')
+          id:              String(usData[ui][0]),
+          identifier:      String(usData[ui][1]),
+          role:            String(usData[ui][4] || 'user'),
+          phone:           String(usData[ui][5] || ''),
+          waApiKey:        String(usData[ui][6] || ''),
+          patientName:     String(usData[ui][7] || ''),
+          doctorName:      String(usData[ui][8] || ''),
+          smsCarrier:      String(usData[ui][10] || ''),
+          email:           uEmail,
+          telegramChatIds: String(usData[ui][12] || '')
         });
       }
     }
@@ -183,10 +222,12 @@ function doGet(e) {
       var newIdentifier = String(e.parameter.identifier || '').trim();
       var newName       = String(e.parameter.patientName || '').trim();
       var newRole       = String(e.parameter.role || 'user').trim();
+      var newEmail      = String(e.parameter.email || '').trim() || (newIdentifier.indexOf('@') >= 0 ? newIdentifier : '');
+      var newTelegram   = String(e.parameter.telegramChatIds || '').trim();
+      
       if (!newIdentifier) {
         result = { error: 'identifier requerido' };
       } else {
-        // Verificar si ya existe
         var alreadyExists = false;
         for (var ci = 1; ci < cuData.length; ci++) {
           if (String(cuData[ci][1]).toLowerCase() === newIdentifier.toLowerCase()) {
@@ -199,8 +240,8 @@ function doGet(e) {
         } else {
           var newUUID = Utilities.getUuid();
           var utcOff  = parseInt(e.parameter.utcOffset) || 0;
-          cuSheet.appendRow([newUUID, newIdentifier, newName, new Date(), newRole, '', '', newName, '', utcOff]);
-          result = { success: true, id: newUUID, identifier: newIdentifier, patientName: newName, role: newRole };
+          cuSheet.appendRow([newUUID, newIdentifier, newName, new Date(), newRole, '', '', newName, '', utcOff, '', newEmail, newTelegram]);
+          result = { success: true, id: newUUID, identifier: newIdentifier, patientName: newName, role: newRole, email: newEmail, telegramChatIds: newTelegram };
         }
       }
     }
@@ -208,28 +249,65 @@ function doGet(e) {
 
   // ---------- UPDATE PROFILE ----------
   else if (action === 'updateProfile' && userId) {
-    // Admin puede actualizar perfil de otro usuario via targetUserId
     var effectiveUpdateId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet2  = ss.getSheetByName(USERS_SHEET_NAME);
     var data2   = sheet2.getDataRange().getValues();
     var profile = JSON.parse(e.parameter.data);
     for (var j = 1; j < data2.length; j++) {
       if (String(data2[j][0]) === effectiveUpdateId) {
-        if (profile.identifier  !== undefined) sheet2.getRange(j + 1, 2).setValue(profile.identifier);
-        if (profile.name        !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
-        if (profile.phone       !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
-        if (profile.waApiKey    !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
-        if (profile.patientName !== undefined) sheet2.getRange(j + 1, 8).setValue(profile.patientName);
-        if (profile.doctorName  !== undefined) sheet2.getRange(j + 1, 9).setValue(profile.doctorName);
-        if (profile.utcOffset   !== undefined) sheet2.getRange(j + 1, 10).setValue(profile.utcOffset);
-        if (profile.smsCarrier  !== undefined) sheet2.getRange(j + 1, 11).setValue(profile.smsCarrier);
+        if (profile.identifier      !== undefined) sheet2.getRange(j + 1, 2).setValue(profile.identifier);
+        if (profile.name            !== undefined) sheet2.getRange(j + 1, 3).setValue(profile.name);
+        if (profile.phone           !== undefined) sheet2.getRange(j + 1, 6).setValue(profile.phone);
+        if (profile.waApiKey        !== undefined) sheet2.getRange(j + 1, 7).setValue(profile.waApiKey);
+        if (profile.patientName     !== undefined) sheet2.getRange(j + 1, 8).setValue(profile.patientName);
+        if (profile.doctorName      !== undefined) sheet2.getRange(j + 1, 9).setValue(profile.doctorName);
+        if (profile.utcOffset       !== undefined) sheet2.getRange(j + 1, 10).setValue(profile.utcOffset);
+        if (profile.smsCarrier      !== undefined) sheet2.getRange(j + 1, 11).setValue(profile.smsCarrier);
+        if (profile.email           !== undefined) sheet2.getRange(j + 1, 12).setValue(profile.email);
+        if (profile.telegramChatIds !== undefined) sheet2.getRange(j + 1, 13).setValue(profile.telegramChatIds);
         break;
       }
     }
     result = { success: true };
   }
 
-  // ---------- SAVE MED (via GET to avoid CORS) ----------
+  // ---------- TEST TELEGRAM ----------
+  else if (action === 'testTelegram') {
+    var testChatIds = e.parameter.telegramChatIds || '';
+    var testPatient = e.parameter.patientName || 'Paciente';
+    var testText = '<b>🔔 ERGOMEDI-TRACKER — Prueba Exitosa</b>\n\n' +
+                   'Las notificaciones por Telegram están activas para <b>' + testPatient + '</b>.\n' +
+                   'Recibirás las alertas de toma de medicamentos al instante en este chat.';
+    var sentCount = sendTelegramAlerts(testChatIds, testText);
+    result = { success: true, sentCount: sentCount };
+  }
+
+  // ---------- SAVE PUSH SUBSCRIPTION ----------
+  else if (action === 'savePushSubscription' && userId) {
+    var pushSheet = ss.getSheetByName(PUSH_SHEET_NAME);
+    if (!pushSheet) {
+      pushSheet = ss.insertSheet(PUSH_SHEET_NAME);
+      pushSheet.appendRow(['id', 'userId', 'endpoint', 'p256dh', 'auth', 'updatedAt']);
+    }
+    var subData = JSON.parse(e.parameter.data || '{}');
+    var effectivePushId = getEffectiveUserId(ss, userId, targetUserId);
+    var pData = pushSheet.getDataRange().getValues();
+    var foundRow = -1;
+    for (var pr = 1; pr < pData.length; pr++) {
+      if (String(pData[pr][1]) === effectivePushId && String(pData[pr][2]) === subData.endpoint) {
+        foundRow = pr + 1;
+        break;
+      }
+    }
+    if (foundRow > -1) {
+      pushSheet.getRange(foundRow, 6).setValue(new Date());
+    } else {
+      pushSheet.appendRow([Utilities.getUuid(), effectivePushId, subData.endpoint || '', subData.p256dh || '', subData.auth || '', new Date()]);
+    }
+    result = { success: true };
+  }
+
+  // ---------- SAVE MED ----------
   else if (action === 'saveMed' && userId) {
     var effectiveSaveId = getEffectiveUserId(ss, userId, targetUserId);
     var sheet3   = ss.getSheetByName(MEDS_SHEET_NAME);
@@ -297,7 +375,6 @@ function doGet(e) {
     var row5     = headers5.map(function(h) { return log[h] || ''; });
     historySheet.appendRow(row5);
     
-    // Increment dosesTaken and takenTodayCount in medications sheet!
     var medId = log.medId;
     var logDate = log.date;
     if (medId) {
@@ -343,13 +420,12 @@ function doGet(e) {
         medId = historyData[hIdx][2];
         oldDate = historyData[hIdx][6];
         
-        historySheet.getRange(hIdx + 1, 6).setValue(new Date(newTimestamp)); // timestamp
-        historySheet.getRange(hIdx + 1, 7).setValue(newDate); // date
+        historySheet.getRange(hIdx + 1, 6).setValue(new Date(newTimestamp));
+        historySheet.getRange(hIdx + 1, 7).setValue(newDate);
         break;
       }
     }
     
-    // Adjust takenTodayCount if moving to/from today
     if (medId && oldDate && oldDate !== newDate) {
       var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
       var medsData = medsSheet.getDataRange().getValues();
@@ -394,7 +470,6 @@ function doGet(e) {
       }
     }
     
-    // Decrement dosesTaken and takenTodayCount
     if (medId) {
       var medsSheet = ss.getSheetByName(MEDS_SHEET_NAME);
       var medsData = medsSheet.getDataRange().getValues();
@@ -457,13 +532,12 @@ function doGet(e) {
       rows6.push(obj6);
     }
 
-    // Deduplicate by id
     var byId = {};
     rows6.forEach(function(m6) {
       var k = String(m6.id);
       if (!byId[k] || (m6.dosesTaken || 0) >= (byId[k].dosesTaken || 0)) byId[k] = m6;
     });
-    // Deduplicate by name+dosage+doctorName+pathology
+
     var byName = {};
     Object.keys(byId).forEach(function(k6) {
       var m6 = byId[k6];
@@ -516,12 +590,7 @@ function doPost(e) {
 }
 
 // ==========================================================
-// checkAndSendAlerts - Ejecutar cada minuto con un trigger
-//
-// CORRECCION DE TIMEZONE Y TRATAMIENTOS CULMINADOS:
-//   - Omite el envío de notificaciones para tratamientos culminados.
-//   - Almacena una caché global de deduplicación con marcas de tiempo absolutas
-//     ('sent_alerts_cache') inmune a desfases de cambio de día UTC / local.
+// checkAndSendAlerts - Cron cada minuto
 // ==========================================================
 function checkAndSendAlerts() {
   var ss          = SpreadsheetApp.getActiveSpreadsheet();
@@ -532,13 +601,11 @@ function checkAndSendAlerts() {
 
   var nowUtcMs = Date.now();
 
-  // Caché de deduplicación absoluta (inmune a fronteras de zona horaria)
   var props      = PropertiesService.getScriptProperties();
   var cacheKey   = 'sent_alerts_cache';
   var sentAlerts = {};
   try { sentAlerts = JSON.parse(props.getProperty(cacheKey) || '{}'); } catch(e) {}
 
-  // Pruning: remover registros más viejos de 30 horas para evitar el desbordamiento de ScriptProperties
   var prunedAlerts = {};
   for (var k in sentAlerts) {
     if (nowUtcMs - sentAlerts[k] < 30 * 60 * 60 * 1000) {
@@ -556,24 +623,27 @@ function checkAndSendAlerts() {
   }
 
   for (var u = 1; u < usersData.length; u++) {
-    var userRow     = usersData[u];
-    var userId      = String(userRow[0]);
-    var userEmail   = String(userRow[1]);
-    var phone       = String(userRow[5] || '');
-    var apiKey      = String(userRow[6] || '');
-    var patientName = String(userRow[7] || '');
-    var utcOffset   = parseInt(userRow[9]) || 0;
-    var smsCarrier  = String(userRow[10] || '');
+    var userRow         = usersData[u];
+    var userId          = String(userRow[0]);
+    var identifierVal   = String(userRow[1] || '').trim();
+    var phone           = String(userRow[5] || '');
+    var apiKey          = String(userRow[6] || '');
+    var patientName     = String(userRow[7] || '');
+    var utcOffset       = parseInt(userRow[9]) || 0;
+    var smsCarrier      = String(userRow[10] || '');
+    var storedEmail     = String(userRow[11] || '').trim();
+    var telegramChatIds = String(userRow[12] || '').trim();
 
-    // Calcular hora local del usuario usando su offset almacenado
+    var userEmail = storedEmail || (identifierVal.indexOf('@') >= 0 ? identifierVal : '');
+
     var localMs   = nowUtcMs + utcOffset * 60000;
     var localDate = new Date(localMs);
     var nowHHMM   = Utilities.formatDate(localDate, 'UTC', 'HH:mm');
 
-    var processedMeds = {}; // Deduplicate meds in memory
+    var processedMeds = {};
 
-    var medsHeaders = medsData[0];
-    var docNameIdx  = medsHeaders.indexOf('doctorName');
+    var medsHeaders  = medsData[0];
+    var docNameIdx   = medsHeaders.indexOf('doctorName');
     var pathologyIdx = medsHeaders.indexOf('pathology');
 
     for (var med = 1; med < medsData.length; med++) {
@@ -589,16 +659,15 @@ function checkAndSendAlerts() {
                    dosage.trim().toLowerCase() + '|' + 
                    docName.trim().toLowerCase() + '|' + 
                    pathol.trim().toLowerCase();
-      if (processedMeds[medKey]) continue; // Skip duplicates
+      if (processedMeds[medKey]) continue;
       processedMeds[medKey] = true;
 
-      // Omitir medicamentos con el plan ya culminado
       var timesPerDay  = parseInt(medsData[med][5]) || 0;
       var durationDays = parseInt(medsData[med][6]) || 0;
       var dosesTaken   = parseInt(medsData[med][9]) || 0;
       var totalNeeded  = timesPerDay * durationDays;
       if (totalNeeded > 0 && dosesTaken >= totalNeeded) {
-        continue; // Tratamiento culminado, no alertar
+        continue;
       }
 
       var times   = [];
@@ -620,7 +689,7 @@ function checkAndSendAlerts() {
           if (sentAlerts[dedupeKey]) continue;
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
-          var subject = '', body = '', waMsg = '', smsBody = '';
+          var subject = '', body = '', tgMsg = '', smsBody = '';
 
           if (alert.offset === -10) {
             subject = '[10 min] ' + medName;
@@ -629,7 +698,13 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
                       'Prepara tu medicación con anticipación.\n\n-- ERGOMEDI-TRACKER';
-            waMsg   = '(10 min) ' + greeting + ' En 10 minutos debes tomar *' + medName + '* (' + dosage + ') a las ' + scheduledTime + '. ¡Prepárala!';
+            
+            tgMsg   = '⏰ <b>ERGOMEDI-TRACKER — En 10 minutos</b>\n\n' +
+                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '💊 Medicamento: <b>' + medName + '</b>\n' +
+                      '💉 Dosis: ' + dosage + '\n' +
+                      '🕐 Hora: ' + scheduledTime + '\n\n' +
+                      '<i>Prepara la medicación con anticipación.</i>';
             smsBody = 'ERGOMEDI SMS: En 10 min toma ' + medName + ' (' + dosage + ') - ' + scheduledTime;
           } else if (alert.offset === -5) {
             subject = '[5 min] ' + medName;
@@ -638,7 +713,13 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
                       '¡No lo olvides!\n\n-- ERGOMEDI-TRACKER';
-            waMsg   = '(5 min) Faltan 5 minutos para tomar *' + medName + '* (' + dosage + ').';
+            
+            tgMsg   = '⚠️ <b>ERGOMEDI-TRACKER — En 5 minutos</b>\n\n' +
+                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '💊 Medicamento: <b>' + medName + '</b>\n' +
+                      '💉 Dosis: ' + dosage + '\n' +
+                      '🕐 Hora: ' + scheduledTime + '\n\n' +
+                      '<i>Ten la dosis lista para tomar.</i>';
             smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')';
           } else {
             subject = '[AHORA] ' + medName;
@@ -647,19 +728,28 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora: ' + scheduledTime + '\n\n' +
                       'Abre ERGOMEDI-TRACKER y confirma la toma.\n\n-- ERGOMEDI-TRACKER';
-            waMsg   = '(¡ES HORA! ERGOMEDI): ' + greeting + ' Toma tu dosis de *' + medName + '* (' + dosage + ') ahora mismo.';
+            
+            tgMsg   = '💊 <b>¡ES HORA DE TU MEDICAMENTO!</b>\n\n' +
+                      'Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
+                      '📋 Medicamento: <b>' + medName + '</b>\n' +
+                      '💉 Dosis: ' + dosage + '\n' +
+                      '🕐 Hora: ' + scheduledTime + '\n' +
+                      (pathol ? ('🏥 Condición: ' + pathol + '\n') : '') +
+                      '\n✅ Abre ERGOMEDI-TRACKER para confirmar la toma.';
             smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ') ahora';
           }
 
-          // Email (canal principal)
+          // 1. Email
           if (userEmail && userEmail.indexOf('@') >= 0) {
             try { MailApp.sendEmail({ to: userEmail, subject: subject, body: body }); } catch(err) {}
           }
 
-          // WhatsApp via CallMeBot (canal secundario)
-          if (phone && apiKey) sendWhatsAppMessage(phone, waMsg, apiKey);
+          // 2. Telegram (Multi-destinatario: Paciente + Cuidadores)
+          if (telegramChatIds) {
+            sendTelegramAlerts(telegramChatIds, tgMsg);
+          }
 
-          // SMS via Email-to-SMS Gateway (100% costo cero)
+          // 3. Legacy SMS fallback
           if (phone && smsCarrier) {
             var cleanPhone = phone.replace(/[^0-9]/g, '');
             var smsDomain  = smsCarrier.trim();
@@ -668,14 +758,12 @@ function checkAndSendAlerts() {
             try { MailApp.sendEmail({ to: smsTarget, subject: 'ERGOMEDI SMS', body: smsBody }); } catch(err) {}
           }
 
-          // Almacenar el timestamp de envío en la caché
           sentAlerts[dedupeKey] = nowUtcMs;
         }
       }
     }
   }
 
-  // Guardar cache
   props.setProperty(cacheKey, JSON.stringify(sentAlerts));
 }
 
@@ -693,37 +781,4 @@ function jsonResponse(data, callback) {
       .setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
-}
-
-// ==========================================================
-// cleanupDuplicates - Ejecutar UNA vez para limpiar duplicados
-// ==========================================================
-function cleanupDuplicates() {
-  var ss      = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet   = ss.getSheetByName('medications');
-  if (!sheet) { Logger.log('Sheet not found'); return; }
-  var data    = sheet.getDataRange().getValues();
-  var headers = data[0];
-  var nameIdx   = headers.indexOf('name');
-  var dosageIdx = headers.indexOf('dosage');
-  var userIdx   = headers.indexOf('userId');
-  var doseIdx   = headers.indexOf('dosesTaken');
-  var best = {};
-  var rowsToDelete = [];
-  for (var i = 1; i < data.length; i++) {
-    var row      = data[i];
-    var nameKey  = String(row[userIdx]) + '|' + String(row[nameIdx]).trim().toLowerCase() + '|' + String(row[dosageIdx]).trim().toLowerCase();
-    var doses    = parseInt(row[doseIdx]) || 0;
-    var sheetRow = i + 1;
-    if (!best[nameKey]) {
-      best[nameKey] = { sheetRow: sheetRow, doses: doses };
-    } else if (doses >= best[nameKey].doses) {
-      rowsToDelete.push(best[nameKey].sheetRow);
-      best[nameKey] = { sheetRow: sheetRow, doses: doses };
-    } else {
-      rowsToDelete.push(sheetRow);
-    }
-  }
-  rowsToDelete.sort(function(a, b) { return b - a; }).forEach(function(r) { sheet.deleteRow(r); });
-  Logger.log('Deleted ' + rowsToDelete.length + ' duplicate rows.');
 }

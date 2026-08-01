@@ -270,3 +270,19 @@ export const testWebPush = async () => {
   return true;
 };
 
+/**
+ * Register Service Worker for PWA Push notifications when app is closed.
+ */
+export const registerServiceWorkerPush = async () => {
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      return reg;
+    } catch (err) {
+      console.warn('[ERGOMEDI] Service worker registration failed:', err);
+    }
+  }
+  return null;
+};
+
+

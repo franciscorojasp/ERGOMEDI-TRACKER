@@ -24,9 +24,18 @@ export const api = {
   },
 
   /** Admin only: create a new patient account */
-  async createPatient(adminUserId, identifier, patientName, role = 'user') {
+  async createPatient(adminUserId, identifier, patientName, role = 'user', email = '', telegramChatIds = '') {
     const utcOffset = -new Date().getTimezoneOffset();
-    return this.jsonp('createUser', { userId: adminUserId, identifier, patientName, role, utcOffset });
+    return this.jsonp('createUser', { userId: adminUserId, identifier, patientName, role, email, telegramChatIds, utcOffset });
+  },
+
+  async testTelegram(telegramChatIds, patientName = '') {
+    return this.jsonp('testTelegram', { telegramChatIds, patientName });
+  },
+
+  async savePushSubscription(userId, subscriptionData) {
+    const data = JSON.stringify(subscriptionData);
+    return this.jsonp('savePushSubscription', { userId, data });
   },
 
   async getMeds(userId, targetUserId = null) {

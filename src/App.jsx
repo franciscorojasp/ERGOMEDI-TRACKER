@@ -10,7 +10,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { api } from './api';
-import { setupNotifications, shareToWhatsApp, testWhatsApp, testWebPush } from './notifications';
+import { setupNotifications, shareToWhatsApp, testWhatsApp, testWebPush, registerServiceWorkerPush } from './notifications';
 
 const getDriveImageUrl = (url) => {
   if (!url) return null;
@@ -1930,19 +1930,36 @@ export default function App() {
                       </div>
                       <div className="input-group">
                         <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Mail size={14} style={{ display: 'inline', marginRight: '5px' }} /> CORREO ELECTRÓNICO
+                          <User size={14} style={{ display: 'inline', marginRight: '5px' }} /> IDENTIFICADOR / USUARIO
                         </label>
                         <input
-                          type="email"
+                          type="text"
                           className="input-field"
-                          placeholder="Ej: paciente@correo.com"
+                          placeholder="Ej: paciente@correo.com o +58424..."
                           value={activeProfile.identifier || ''}
                           onChange={e => handleProfileFieldChange('identifier', e.target.value)}
                           onBlur={() => updateProfile({ identifier: activeProfile.identifier })}
                           style={{ background: 'var(--bg-main)' }}
                         />
                         <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
-                          📧 Este correo se usa para iniciar sesión y recibir alertas por email.
+                          🔑 Identificador para inicio de sesión.
+                        </p>
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
+                          <Mail size={14} style={{ display: 'inline', marginRight: '5px' }} /> CORREO ELECTRÓNICO PARA ALERTAS
+                        </label>
+                        <input
+                          type="email"
+                          className="input-field"
+                          placeholder="Ej: paciente@correo.com"
+                          value={activeProfile.email || ''}
+                          onChange={e => handleProfileFieldChange('email', e.target.value)}
+                          onBlur={() => updateProfile({ email: activeProfile.email })}
+                          style={{ background: 'var(--bg-main)' }}
+                        />
+                        <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                          📧 Las alertas por correo se enviarán siempre a esta dirección.
                         </p>
                       </div>
                       <div className="input-group">
@@ -2083,42 +2100,41 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* ── NOTIFICACIONES WHATSAPP ── */}
+                  {/* ── NOTIFICACIONES DE TELEGRAM (MULTI-CUIDADORES) ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                       <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                        Alertas WhatsApp <span style={{ color: '#25D366', fontWeight: 700 }}>✓ Gratis</span>
+                        Alertas por Telegram (Multi-Cuidadores) <span style={{ color: '#0088cc', fontWeight: 700 }}>✓ Costo $0</span>
                       </p>
-                      {/* Status badge */}
                       <span style={{
                         fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
                         textTransform: 'uppercase', letterSpacing: '0.5px',
-                        background: (activeProfile.phone && activeProfile.waApiKey) ? 'rgba(37,211,102,0.15)' : 'rgba(239,68,68,0.12)',
-                        color: (activeProfile.phone && activeProfile.waApiKey) ? '#25D366' : '#ef4444',
-                        border: `1px solid ${(activeProfile.phone && activeProfile.waApiKey) ? 'rgba(37,211,102,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                        background: (activeProfile.telegramChatIds) ? 'rgba(0,136,204,0.15)' : 'rgba(255,255,255,0.08)',
+                        color: (activeProfile.telegramChatIds) ? '#0088cc' : 'var(--text-muted)',
+                        border: `1px solid ${(activeProfile.telegramChatIds) ? 'rgba(0,136,204,0.3)' : 'var(--border)'}`,
                       }}>
-                        {(activeProfile.phone && activeProfile.waApiKey) ? '● Configurado' : '○ Sin configurar'}
+                        {(activeProfile.telegramChatIds) ? '● Configurado' : '○ Sin configurar'}
                       </span>
                     </div>
 
                     {/* Instruction card */}
                     <div style={{
-                      background: 'rgba(37,211,102,0.06)', borderRadius: '12px',
-                      border: '1px solid rgba(37,211,102,0.2)', padding: '14px', marginBottom: '16px',
+                      background: 'rgba(0,136,204,0.06)', borderRadius: '12px',
+                      border: '1px solid rgba(0,136,204,0.2)', padding: '14px', marginBottom: '16px',
                     }}>
-                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#25D366', marginBottom: '10px', letterSpacing: '0.5px' }}>
-                        📋 ACTIVACIÓN GRATUITA — 3 PASOS (solo una vez)
+                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#0088cc', marginBottom: '10px', letterSpacing: '0.5px' }}>
+                        📱 OBTENER CHAT IDs EN TELEGRAM (PACIENTE Y CUIDADORES)
                       </p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                         {[
-                          { n: '1', txt: 'Guarda en WhatsApp el número: +34 623 78 64 49 como "CallMeBot"' },
-                          { n: '2', txt: 'Envíale el mensaje exacto: "I allow callmebot to send me messages"' },
-                          { n: '3', txt: 'Recibirás tu API Key en segundos. Cópiala y pégala abajo.' },
+                          { n: '1', txt: 'Cada persona (adulto mayor y cuidadores) abre en Telegram el bot @userinfobot o presiona "Abrir Bot en Telegram".' },
+                          { n: '2', txt: 'Envía el comando /start. El bot te responderá con tu Id número único (Ej: 123456789).' },
+                          { n: '3', txt: 'Ingresa abajo los IDs de las personas que recibirán alertas, separados por comas.' },
                         ].map(({ n, txt }) => (
                           <div key={n} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                             <span style={{
                               minWidth: '20px', height: '20px', borderRadius: '50%',
-                              background: 'rgba(37,211,102,0.25)', color: '#25D366',
+                              background: 'rgba(0,136,204,0.25)', color: '#0088cc',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: '0.6rem', fontWeight: 900, flexShrink: 0,
                             }}>{n}</span>
@@ -2126,155 +2142,65 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '10px', marginBottom: 0 }}>
-                        💡 Recibirás alertas 10 min antes, 5 min antes y en la hora exacta de cada toma. Funciona aunque la app esté cerrada.
-                      </p>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div className="input-group" style={{ marginBottom: 0 }}>
                         <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Phone size={14} style={{ display: 'inline', marginRight: '5px' }} /> TU NÚMERO WHATSAPP (con código país)
-                        </label>
-                        <input
-                          type="tel"
-                          className="input-field"
-                          placeholder="Ej: +58424xxxxxxx  /  +573001234567"
-                          value={activeProfile.phone || ''}
-                          onChange={e => handleProfileFieldChange('phone', e.target.value)}
-                          onBlur={() => updateProfile({ phone: activeProfile.phone })}
-                          style={{ background: 'var(--bg-main)' }}
-                        />
-                      </div>
-                      <div className="input-group" style={{ marginBottom: 0 }}>
-                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Bell size={14} style={{ display: 'inline', marginRight: '5px' }} /> CALLMEBOT API KEY
+                          <Send size={14} style={{ display: 'inline', marginRight: '5px' }} /> CHAT IDs DE TELEGRAM (separados por comas)
                         </label>
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Ej: 123456  (la recibes del bot por WhatsApp)"
-                          value={activeProfile.waApiKey || ''}
-                          onChange={e => handleProfileFieldChange('waApiKey', e.target.value)}
-                          onBlur={() => updateProfile({ waApiKey: activeProfile.waApiKey })}
+                          placeholder="Ej: 123456789, 987654321  (ID Paciente, Cuidador 1, Cuidador 2)"
+                          value={activeProfile.telegramChatIds || ''}
+                          onChange={e => handleProfileFieldChange('telegramChatIds', e.target.value)}
+                          onBlur={() => updateProfile({ telegramChatIds: activeProfile.telegramChatIds })}
                           style={{ background: 'var(--bg-main)' }}
                         />
+                        <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                          👥 Las alertas de toma de medicamentos llegarán a TODOS los Chat IDs ingresados en simultáneo.
+                        </p>
                       </div>
                     </div>
 
                     {/* Action buttons row */}
                     <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
                       <button
-                        onClick={() => window.open('https://wa.me/34623786449?text=I%20allow%20callmebot%20to%20send%20me%20messages', '_blank')}
+                        type="button"
+                        onClick={() => window.open('https://t.me/userinfobot', '_blank')}
                         className="btn-primary"
-                        style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                        style={{ background: 'linear-gradient(135deg, #0088cc 0%, #005588 100%)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
                       >
-                        <Phone size={16} /> ACTIVAR BOT
+                        <Send size={16} /> ABRIR BOT TELEGRAM
                       </button>
                       <button
+                        type="button"
                         onClick={async () => {
-                          if (!activeProfile.phone || !activeProfile.waApiKey) {
-                            alert('Completa el número de teléfono y el API Key antes de probar.');
+                          if (!activeProfile.telegramChatIds) {
+                            alert('Ingresa al menos un Chat ID de Telegram antes de probar.');
                             return;
                           }
-                          await testWhatsApp(activeProfile.phone, activeProfile.waApiKey);
-                          alert('\u2705 Mensaje de prueba enviado. Revisa tu WhatsApp en unos segundos.');
+                          const res = await api.testTelegram(activeProfile.telegramChatIds, activeProfile.patientName || activeProfile.name || 'Paciente');
+                          if (res && res.sentCount > 0) {
+                            alert(`✅ Alerta de prueba enviada con éxito a ${res.sentCount} destinatario(s) en Telegram.`);
+                          } else {
+                            alert('⚠️ No se pudo enviar. Verifica que los Chat IDs sean correctos y hayas presionado /start en Telegram.');
+                          }
                         }}
                         className="btn-primary"
-                        style={{ background: 'var(--bg-main)', border: '1px solid #25D366', color: '#25D366', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
+                        style={{ background: 'var(--bg-main)', border: '1px solid #0088cc', color: '#0088cc', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
                       >
-                        <Send size={16} /> PROBAR AHORA
+                        <Bell size={16} /> PROBAR TELEGRAM
                       </button>
                     </div>
                   </div>
 
-                  {/* ── ALERTAS POR SMS (Email-to-SMS Gateway Gratis) ── */}
+                  {/* ── NOTIFICACIONES PUSH PWA (APP CERRADA - COSTO $0) ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                       <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                        Alertas por SMS (Vía Operadora) <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Costo $0</span>
-                      </p>
-                      <span style={{
-                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        background: (activeProfile.phone && activeProfile.smsCarrier) ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.08)',
-                        color: (activeProfile.phone && activeProfile.smsCarrier) ? '#0fe0e0' : 'var(--text-muted)',
-                        border: `1px solid ${(activeProfile.phone && activeProfile.smsCarrier) ? 'rgba(15,224,224,0.3)' : 'var(--border)'}`,
-                      }}>
-                        {(activeProfile.phone && activeProfile.smsCarrier) ? '● Configurado' : '○ Sin configurar'}
-                      </span>
-                    </div>
-
-                    <div style={{
-                      background: 'rgba(15,224,224,0.05)', borderRadius: '12px',
-                      border: '1px solid rgba(15,224,224,0.2)', padding: '14px', marginBottom: '16px',
-                    }}>
-                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#0fe0e0', marginBottom: '6px', letterSpacing: '0.5px' }}>
-                        📱 ¿CÓMO FUNCIONA EL SMS COSTO $0?
-                      </p>
-                      <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                        Las operadoras convierten correos electrónicos dirigidos a tu número en <strong>mensajes de texto SMS reales</strong> en tu celular. Al seleccionar tu operadora telefónica abajo, el sistema te enviará alertas SMS directamente a tu teléfono sin costo de suscripción.
-                      </p>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div className="input-group" style={{ marginBottom: 0 }}>
-                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Globe size={14} style={{ display: 'inline', marginRight: '5px' }} /> OPERADORA TELEFÓNICA (Servicio SMS)
-                        </label>
-                        <select
-                          className="input-field"
-                          value={
-                            ['sms.digitel.com.ve', 'sms.movistar.com.ve', 'sms.movilnet.com.ve', 'txt.att.net', 'tmomail.net', 'vtext.com', ''].includes(activeProfile.smsCarrier || '')
-                              ? (activeProfile.smsCarrier || '')
-                              : 'custom'
-                          }
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val !== 'custom') {
-                              handleProfileFieldChange('smsCarrier', val);
-                              updateProfile({ smsCarrier: val });
-                            } else {
-                              handleProfileFieldChange('smsCarrier', '@');
-                            }
-                          }}
-                          style={{ background: 'var(--bg-main)' }}
-                        >
-                          <option value="">-- Seleccionar Operadora --</option>
-                          <option value="sms.digitel.com.ve">🇻🇪 Digitel Venezuela (sms.digitel.com.ve)</option>
-                          <option value="sms.movistar.com.ve">🇻🇪 Movistar Venezuela (sms.movistar.com.ve)</option>
-                          <option value="sms.movilnet.com.ve">🇻🇪 Movilnet Venezuela (sms.movilnet.com.ve)</option>
-                          <option value="txt.att.net">🇺🇸 AT&T (txt.att.net)</option>
-                          <option value="tmomail.net">🇺🇸 T-Mobile (tmomail.net)</option>
-                          <option value="vtext.com">🇺🇸 Verizon (vtext.com)</option>
-                          <option value="custom">✏️ Otra Operadora / Dominio Personalizado</option>
-                        </select>
-                      </div>
-
-                      {(!['sms.digitel.com.ve', 'sms.movistar.com.ve', 'sms.movilnet.com.ve', 'txt.att.net', 'tmomail.net', 'vtext.com', ''].includes(activeProfile.smsCarrier || '')) && (
-                        <div className="input-group" style={{ marginBottom: 0 }}>
-                          <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                            DOMINIO EMAIL-TO-SMS PERSONALIZADO
-                          </label>
-                          <input
-                            type="text"
-                            className="input-field"
-                            placeholder="Ej: sms.operadora.com"
-                            value={activeProfile.smsCarrier || ''}
-                            onChange={e => handleProfileFieldChange('smsCarrier', e.target.value)}
-                            onBlur={() => updateProfile({ smsCarrier: activeProfile.smsCarrier })}
-                            style={{ background: 'var(--bg-main)' }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* ── NOTIFICACIONES PUSH PWA ── */}
-                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                        Notificaciones Push PWA <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Pantalla de Inicio</span>
+                        Notificaciones Push PWA (App Cerrada) <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Costo $0</span>
                       </p>
                       <span style={{
                         fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
@@ -2297,7 +2223,11 @@ export default function App() {
                           }
                           const perm = await Notification.requestPermission();
                           if (perm === 'granted') {
-                            alert('✅ Permiso de notificaciones concedido exitosamente.');
+                            await registerServiceWorkerPush();
+                            if (user?.id) {
+                              await api.savePushSubscription(user.id, { endpoint: window.location.origin });
+                            }
+                            alert('✅ Permisos concedidos y Service Worker registrado para notificaciones con la app cerrada.');
                           } else {
                             alert('⚠️ Permiso denegado. Habilita las notificaciones en la configuración de tu navegador.');
                           }
@@ -2305,7 +2235,7 @@ export default function App() {
                         className="btn-primary"
                         style={{ background: 'var(--primary)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
                       >
-                        <Bell size={16} /> PERMITIR NOTIFICACIONES PUSH
+                        <Bell size={16} /> PERMITIR Y REGISTRAR PUSH
                       </button>
 
                       <button
