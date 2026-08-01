@@ -17,6 +17,7 @@ var FOLDER_NAME        = 'ERGOMEDI_PRESCRIPTIONS';
 var ADMIN_EMAIL = 'francisco.rojasp@gmail.com';
 var ADMIN_PHONE = '+584244736489';
 var TELEGRAM_BOT_TOKEN = '8318969420:AAF44mtS301UzX3j30CgxaXcJBAOSEfONAg';
+var APP_URL = 'https://ergomedi-tracker.vercel.app';
 
 // ==========================================================
 // setup() - Ejecutar UNA vez desde el editor de Apps Script
@@ -715,9 +716,11 @@ function checkAndSendAlerts() {
           if (sentAlerts[dedupeKey]) continue;
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
-          var subject = '', body = '', tgMsg = '', smsBody = '';
+          var subject = '', body = '', htmlBody = '', tgMsg = '', smsBody = '';
           var time12h = formatTime12h(scheduledTime);
           var tzLabel = getTimezoneLabel(utcOffset);
+          var actionLinkHtml = '<a href="' + APP_URL + '" style="background: linear-gradient(135deg, #0fe0e0 0%, #0088cc 100%); color: #000000; text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: 900; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(15,224,224,0.3);">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a>';
+          var telegramLinkHtml = '👉 <b><a href="' + APP_URL + '">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a></b>';
 
           if (alert.offset === -10) {
             subject = '[10 min] ' + medName;
@@ -726,7 +729,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      'Prepara tu medicación con anticipación.\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⏰ <b>ERGOMEDI-TRACKER — En 10 minutos</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
@@ -734,7 +737,24 @@ function checkAndSendAlerts() {
                       '💉 Dosis: ' + dosage + '\n' +
                       '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
                       '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
-                      '<i>Prepara la medicación con anticipación.</i>';
+                      '<i>Prepara la medicación con anticipación.</i>\n\n' +
+                      telegramLinkHtml;
+
+            htmlBody = '<div style="font-family: Arial, sans-serif; max-width: 520px; padding: 20px; border: 1px solid #1e293b; border-radius: 14px; background-color: #0f172a; color: #f8fafc;">' +
+                       '<h2 style="color: #0fe0e0; margin-top: 0; font-size: 18px;">⏰ ERGOMEDI-TRACKER — En 10 minutos</h2>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">' + greeting + '</p>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">En 10 minutos es hora de tomar tu medicamento:</p>' +
+                       '<div style="background-color: rgba(15,224,224,0.08); border-left: 4px solid #0fe0e0; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
+                       '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
+                       '</div>' +
+                       '<div style="text-align: center; margin: 24px 0 10px 0;">' + actionLinkHtml + '</div>' +
+                       '<hr style="border: 0; border-top: 1px solid #1e293b; margin-top: 20px;">' +
+                       '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
+                       '</div>';
+
             smsBody = 'ERGOMEDI SMS: En 10 min toma ' + medName + ' (' + dosage + ') - ' + scheduledTime;
           } else if (alert.offset === -5) {
             subject = '[5 min] ' + medName;
@@ -743,7 +763,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      '¡No lo olvides!\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⚠️ <b>ERGOMEDI-TRACKER — En 5 minutos</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
@@ -751,7 +771,24 @@ function checkAndSendAlerts() {
                       '💉 Dosis: ' + dosage + '\n' +
                       '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
                       '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
-                      '<i>Ten la dosis lista para tomar.</i>';
+                      '<i>Ten la dosis lista para tomar.</i>\n\n' +
+                      telegramLinkHtml;
+
+            htmlBody = '<div style="font-family: Arial, sans-serif; max-width: 520px; padding: 20px; border: 1px solid #1e293b; border-radius: 14px; background-color: #0f172a; color: #f8fafc;">' +
+                       '<h2 style="color: #eab308; margin-top: 0; font-size: 18px;">⚠️ ERGOMEDI-TRACKER — En 5 minutos</h2>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">' + greeting + '</p>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">En 5 minutos es hora de tomar tu medicamento:</p>' +
+                       '<div style="background-color: rgba(234,179,8,0.08); border-left: 4px solid #eab308; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
+                       '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
+                       '</div>' +
+                       '<div style="text-align: center; margin: 24px 0 10px 0;">' + actionLinkHtml + '</div>' +
+                       '<hr style="border: 0; border-top: 1px solid #1e293b; margin-top: 20px;">' +
+                       '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
+                       '</div>';
+
             smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')';
           } else {
             subject = '[AHORA] ' + medName;
@@ -760,7 +797,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      'Abre ERGOMEDI-TRACKER y confirma la toma.\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '💊 <b>¡ES HORA DE TU MEDICAMENTO!</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
@@ -769,13 +806,30 @@ function checkAndSendAlerts() {
                       '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
                       '🌐 Zona horaria: <i>' + tzLabel + '</i>\n' +
                       (pathol ? ('🏥 Condición: ' + pathol + '\n') : '') +
-                      '\n✅ Abre ERGOMEDI-TRACKER para confirmar la toma.';
+                      '\n' + telegramLinkHtml;
+
+            htmlBody = '<div style="font-family: Arial, sans-serif; max-width: 520px; padding: 20px; border: 1px solid #1e293b; border-radius: 14px; background-color: #0f172a; color: #f8fafc;">' +
+                       '<h2 style="color: #22c55e; margin-top: 0; font-size: 18px;">💊 ERGOMEDI-TRACKER — ¡Es Hora de tu Dosis!</h2>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">' + greeting + '</p>' +
+                       '<p style="font-size: 14px; color: #cbd5e1;">¡Es el momento de tomar tu medicamento!</p>' +
+                       '<div style="background-color: rgba(34,197,94,0.08); border-left: 4px solid #22c55e; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
+                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
+                       '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
+                       (pathol ? ('<p style="margin: 4px 0; font-size: 14px;"><strong>Condición:</strong> ' + pathol + '</p>') : '') +
+                       '</div>' +
+                       '<div style="text-align: center; margin: 24px 0 10px 0;">' + actionLinkHtml + '</div>' +
+                       '<hr style="border: 0; border-top: 1px solid #1e293b; margin-top: 20px;">' +
+                       '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
+                       '</div>';
+
             smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ') ahora';
           }
 
-          // 1. Email
+          // 1. Email (Texto Plano + HTML con Botón Interactivo)
           if (userEmail && userEmail.indexOf('@') >= 0) {
-            try { MailApp.sendEmail({ to: userEmail, subject: subject, body: body }); } catch(err) {}
+            try { MailApp.sendEmail({ to: userEmail, subject: subject, body: body, htmlBody: htmlBody }); } catch(err) {}
           }
 
           // 2. Telegram (Multi-destinatario: Paciente + Cuidadores)
