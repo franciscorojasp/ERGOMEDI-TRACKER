@@ -17,7 +17,16 @@ var FOLDER_NAME        = 'ERGOMEDI_PRESCRIPTIONS';
 var ADMIN_EMAIL = 'francisco.rojasp@gmail.com';
 var ADMIN_PHONE = '+584244736489';
 var TELEGRAM_BOT_TOKEN = '8318969420:AAF44mtS301UzX3j30CgxaXcJBAOSEfONAg';
-var APP_URL = 'https://ergomedi-tracker.vercel.app';
+var DEFAULT_APP_URL = 'https://ergomedi-tracker-franciscorojasp-1887s-projects.vercel.app';
+
+function getLatestAppUrl() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var stored = props.getProperty('latest_app_url');
+    if (stored && stored.indexOf('http') === 0) return stored;
+  } catch(e) {}
+  return DEFAULT_APP_URL;
+}
 
 // ==========================================================
 // setup() - Ejecutar UNA vez desde el editor de Apps Script
@@ -141,6 +150,14 @@ function doGet(e) {
   var targetUserId   = e.parameter.targetUserId || userId;
   var callback       = e.parameter.callback;
   var ss             = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Sincronizar automáticamente la URL de despliegue actual desde el cliente
+  if (e.parameter.appUrl && String(e.parameter.appUrl).indexOf('http') === 0) {
+    var cleanUrl = String(e.parameter.appUrl).trim().replace(/\/+$/, '');
+    try {
+      PropertiesService.getScriptProperties().setProperty('latest_app_url', cleanUrl);
+    } catch(err) {}
+  }
 
   var result;
 
@@ -719,8 +736,9 @@ function checkAndSendAlerts() {
           var subject = '', body = '', htmlBody = '', tgMsg = '', smsBody = '';
           var time12h = formatTime12h(scheduledTime);
           var tzLabel = getTimezoneLabel(utcOffset);
-          var actionLinkHtml = '<a href="' + APP_URL + '" style="background: linear-gradient(135deg, #0fe0e0 0%, #0088cc 100%); color: #000000; text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: 900; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(15,224,224,0.3);">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a>';
-          var telegramLinkHtml = '👉 <b><a href="' + APP_URL + '">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a></b>';
+          var currentAppUrl = getLatestAppUrl();
+          var actionLinkHtml = '<a href="' + currentAppUrl + '" style="background: linear-gradient(135deg, #0fe0e0 0%, #0088cc 100%); color: #000000; text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: 900; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(15,224,224,0.3);">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a>';
+          var telegramLinkHtml = '👉 <b><a href="' + currentAppUrl + '">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a></b>';
 
           if (alert.offset === -10) {
             subject = '[10 min] ' + medName;
@@ -729,7 +747,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⏰ <b>ERGOMEDI-TRACKER — En 10 minutos</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
@@ -763,7 +781,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '⚠️ <b>ERGOMEDI-TRACKER — En 5 minutos</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
@@ -797,7 +815,7 @@ function checkAndSendAlerts() {
                       '- Dosis: ' + dosage + '\n' +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
-                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + APP_URL + '\n\n-- ERGOMEDI-TRACKER';
+                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
             
             tgMsg   = '💊 <b>¡ES HORA DE TU MEDICAMENTO!</b>\n\n' +
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
