@@ -176,7 +176,7 @@ export const api = {
 
       const appUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
                      ? window.location.origin
-                     : 'https://ergomedi-tracker-franciscorojasp-1887s-projects.vercel.app';
+                     : 'https://ergomedi-tracker-git-main-franciscorojasp-1887s-projects.vercel.app';
       url.searchParams.append('appUrl', appUrl);
 
       Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));

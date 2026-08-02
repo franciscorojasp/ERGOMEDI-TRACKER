@@ -17,7 +17,7 @@ var FOLDER_NAME        = 'ERGOMEDI_PRESCRIPTIONS';
 var ADMIN_EMAIL = 'francisco.rojasp@gmail.com';
 var ADMIN_PHONE = '+584244736489';
 var TELEGRAM_BOT_TOKEN = '8318969420:AAF44mtS301UzX3j30CgxaXcJBAOSEfONAg';
-var DEFAULT_APP_URL = 'https://ergomedi-tracker-franciscorojasp-1887s-projects.vercel.app';
+var DEFAULT_APP_URL = 'https://ergomedi-tracker-git-main-franciscorojasp-1887s-projects.vercel.app';
 
 function getLatestAppUrl() {
   try {
@@ -624,9 +624,10 @@ function checkAndSendAlerts() {
   var sentAlerts = {};
   try { sentAlerts = JSON.parse(props.getProperty(cacheKey) || '{}'); } catch(e) {}
 
+  // Prune alerts older than 3 hours (sufficient for ±5 min alert window)
   var prunedAlerts = {};
   for (var k in sentAlerts) {
-    if (nowUtcMs - sentAlerts[k] < 30 * 60 * 60 * 1000) {
+    if (nowUtcMs - sentAlerts[k] < 3 * 60 * 60 * 1000) {
       prunedAlerts[k] = sentAlerts[k];
     }
   }
@@ -638,6 +639,12 @@ function checkAndSendAlerts() {
     var m = parseInt(parts[1]);
     var d = new Date(2000, 0, 1, h, m + mins);
     return Utilities.formatDate(d, 'UTC', 'HH:mm');
+  }
+
+  /** Convert "HH:MM" to total minutes since midnight */
+  function toMinutes(timeStr) {
+    var parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
   }
 
   function formatTime12h(timeStr) {
@@ -673,9 +680,10 @@ function checkAndSendAlerts() {
     var storedEmail     = String(userRow[11] || '').trim();
     var telegramChatIds = String(userRow[12] || '').trim();
 
-    // Si utcOffset no está definido o es 0/inválido, por defecto usar Hora Legal de Venezuela (UTC-4 -> -240 mins)
-    var utcOffset = (rawOffset !== '' && rawOffset !== null && rawOffset !== undefined && !isNaN(parseInt(rawOffset)))
-                    ? parseInt(rawOffset)
+    // Si utcOffset no está definido, por defecto usar Hora Legal de Venezuela (UTC-4 -> -240 mins)
+    // NOTA: 0 es un offset válido (UTC+0), no debe reemplazarse por -240
+    var utcOffset = (rawOffset !== '' && rawOffset !== null && rawOffset !== undefined && !isNaN(Number(rawOffset)))
+                    ? Number(rawOffset)
                     : -240;
 
     var userEmail = storedEmail || (identifierVal.indexOf('@') >= 0 ? identifierVal : '');
@@ -683,6 +691,8 @@ function checkAndSendAlerts() {
     var localMs   = nowUtcMs + utcOffset * 60000;
     var localDate = new Date(localMs);
     var nowHHMM   = Utilities.formatDate(localDate, 'UTC', 'HH:mm');
+    var nowMins   = toMinutes(nowHHMM);
+    var localDateStr = Utilities.formatDate(localDate, 'UTC', 'yyyy-MM-dd');
 
     var processedMeds = {};
 
@@ -719,17 +729,24 @@ function checkAndSendAlerts() {
 
       for (var t = 0; t < times.length; t++) {
         var scheduledTime = times[t];
+        // Only 2 alerts: 5 minutes before and exact time
         var alerts = [
-          { offset: -10, triggerTime: addMinutes(scheduledTime, -10), label: '10 min' },
           { offset: -5,  triggerTime: addMinutes(scheduledTime, -5),  label: '5 min'  },
           { offset:  0,  triggerTime: scheduledTime,                  label: 'AHORA'  }
         ];
 
         for (var a = 0; a < alerts.length; a++) {
           var alert = alerts[a];
-          if (alert.triggerTime !== nowHHMM) continue;
+          
+          // Tolerance-based comparison: accept if within ±1 minute
+          // This absorbs imprecision in Google Apps Script's cron trigger
+          var triggerMins = toMinutes(alert.triggerTime);
+          var diff = Math.abs(nowMins - triggerMins);
+          var wrappedDiff = Math.min(diff, 1440 - diff); // handle midnight wrap
+          if (wrappedDiff > 1) continue;
 
-          var dedupeKey = userId + '_' + medKey + '_' + scheduledTime + '_' + alert.offset;
+          // Include local date in dedupeKey for robustness across days
+          var dedupeKey = localDateStr + '_' + userId + '_' + medKey + '_' + scheduledTime + '_' + alert.offset;
           if (sentAlerts[dedupeKey]) continue;
 
           var greeting = patientName ? ('Hola ' + patientName + ',') : 'Hola,';
@@ -740,45 +757,12 @@ function checkAndSendAlerts() {
           var actionLinkHtml = '<a href="' + currentAppUrl + '" style="background: linear-gradient(135deg, #0fe0e0 0%, #0088cc 100%); color: #000000; text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: 900; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(15,224,224,0.3);">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a>';
           var telegramLinkHtml = '👉 <b><a href="' + currentAppUrl + '">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a></b>';
 
-          if (alert.offset === -10) {
-            subject = '[10 min] ' + medName;
-            body    = greeting + '\n\nEn 10 minutos es hora de tomar:\n\n' +
-                      '- Medicamento: ' + medName + '\n' +
-                      '- Dosis: ' + dosage + '\n' +
-                      '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
-                      '- Zona horaria: ' + tzLabel + '\n\n' +
-                      '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
-            
-            tgMsg   = '⏰ <b>ERGOMEDI-TRACKER — En 10 minutos</b>\n\n' +
-                      '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
-                      '💊 Medicamento: <b>' + medName + '</b>\n' +
-                      '💉 Dosis: ' + dosage + '\n' +
-                      '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
-                      '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
-                      '<i>Prepara la medicación con anticipación.</i>\n\n' +
-                      telegramLinkHtml;
-
-            htmlBody = '<div style="font-family: Arial, sans-serif; max-width: 520px; padding: 20px; border: 1px solid #1e293b; border-radius: 14px; background-color: #0f172a; color: #f8fafc;">' +
-                       '<h2 style="color: #0fe0e0; margin-top: 0; font-size: 18px;">⏰ ERGOMEDI-TRACKER — En 10 minutos</h2>' +
-                       '<p style="font-size: 14px; color: #cbd5e1;">' + greeting + '</p>' +
-                       '<p style="font-size: 14px; color: #cbd5e1;">En 10 minutos es hora de tomar tu medicamento:</p>' +
-                       '<div style="background-color: rgba(15,224,224,0.08); border-left: 4px solid #0fe0e0; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
-                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
-                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
-                       '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
-                       '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
-                       '</div>' +
-                       '<div style="text-align: center; margin: 24px 0 10px 0;">' + actionLinkHtml + '</div>' +
-                       '<hr style="border: 0; border-top: 1px solid #1e293b; margin-top: 20px;">' +
-                       '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
-                       '</div>';
-
-            smsBody = 'ERGOMEDI SMS: En 10 min toma ' + medName + ' (' + dosage + ') - ' + scheduledTime;
-          } else if (alert.offset === -5) {
+          if (alert.offset === -5) {
             subject = '[5 min] ' + medName;
             body    = greeting + '\n\nEn 5 minutos es hora de tomar:\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
+                      (docName ? ('- Médico tratante: ' + docName + '\n') : '') +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
                       '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
@@ -787,6 +771,7 @@ function checkAndSendAlerts() {
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
                       '💊 Medicamento: <b>' + medName + '</b>\n' +
                       '💉 Dosis: ' + dosage + '\n' +
+                      (docName ? ('🩺 Médico tratante: <b>' + docName + '</b>\n') : '') +
                       '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
                       '🌐 Zona horaria: <i>' + tzLabel + '</i>\n\n' +
                       '<i>Ten la dosis lista para tomar.</i>\n\n' +
@@ -799,6 +784,7 @@ function checkAndSendAlerts() {
                        '<div style="background-color: rgba(234,179,8,0.08); border-left: 4px solid #eab308; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
+                       (docName ? ('<p style="margin: 4px 0; font-size: 14px;"><strong>🩺 Médico tratante:</strong> ' + docName + '</p>') : '') +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
                        '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
                        '</div>' +
@@ -807,12 +793,13 @@ function checkAndSendAlerts() {
                        '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
                        '</div>';
 
-            smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')';
+            smsBody = 'ERGOMEDI SMS: En 5 min toma ' + medName + ' (' + dosage + ')' + (docName ? ' - Dr. ' + docName : '');
           } else {
             subject = '[AHORA] ' + medName;
             body    = greeting + '\n\n¡Es el momento de tu medicamento!\n\n' +
                       '- Medicamento: ' + medName + '\n' +
                       '- Dosis: ' + dosage + '\n' +
+                      (docName ? ('- Médico tratante: ' + docName + '\n') : '') +
                       '- Hora de toma: ' + time12h + ' (' + scheduledTime + ')\n' +
                       '- Zona horaria: ' + tzLabel + '\n\n' +
                       '✅ Abre ERGOMEDI-TRACKER para confirmar la toma:\n' + currentAppUrl + '\n\n-- ERGOMEDI-TRACKER';
@@ -821,6 +808,7 @@ function checkAndSendAlerts() {
                       '👤 Paciente: <b>' + (patientName || 'Paciente') + '</b>\n' +
                       '📋 Medicamento: <b>' + medName + '</b>\n' +
                       '💉 Dosis: ' + dosage + '\n' +
+                      (docName ? ('🩺 Médico tratante: <b>' + docName + '</b>\n') : '') +
                       '🕐 Hora: <b>' + time12h + '</b> (' + scheduledTime + ')\n' +
                       '🌐 Zona horaria: <i>' + tzLabel + '</i>\n' +
                       (pathol ? ('🏥 Condición: ' + pathol + '\n') : '') +
@@ -833,6 +821,7 @@ function checkAndSendAlerts() {
                        '<div style="background-color: rgba(34,197,94,0.08); border-left: 4px solid #22c55e; padding: 14px; border-radius: 8px; margin: 16px 0;">' +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Medicamento:</strong> ' + medName + '</p>' +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Dosis:</strong> ' + dosage + '</p>' +
+                       (docName ? ('<p style="margin: 4px 0; font-size: 14px;"><strong>🩺 Médico tratante:</strong> ' + docName + '</p>') : '') +
                        '<p style="margin: 4px 0; font-size: 14px;"><strong>Hora de toma:</strong> ' + time12h + ' (' + scheduledTime + ')</p>' +
                        '<p style="margin: 4px 0; font-size: 13px; color: #94a3b8;"><strong>Zona horaria:</strong> ' + tzLabel + '</p>' +
                        (pathol ? ('<p style="margin: 4px 0; font-size: 14px;"><strong>Condición:</strong> ' + pathol + '</p>') : '') +
@@ -842,7 +831,7 @@ function checkAndSendAlerts() {
                        '<p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
                        '</div>';
 
-            smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ') ahora';
+            smsBody = 'ERGOMEDI SMS: ¡ES HORA! Toma tu dosis de ' + medName + ' (' + dosage + ')' + (docName ? ' - Dr. ' + docName : '') + ' ahora';
           }
 
           // 1. Email (Texto Plano + HTML con Botón Interactivo)
