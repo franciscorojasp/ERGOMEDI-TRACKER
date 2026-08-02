@@ -1312,7 +1312,7 @@ export default function App() {
         </header>
 
         <main className="main-content-scroll" style={{ width: '100%', flex: 1, padding: '20px', paddingBottom: '120px', maxWidth: '1200px', margin: '0 auto' }}>
-          {isViewingOtherPatient && (
+          {isViewingOtherPatient && user?.role === 'admin' && (
             <div style={{
               background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%)',
               border: '1px solid rgba(245, 158, 11, 0.4)',
