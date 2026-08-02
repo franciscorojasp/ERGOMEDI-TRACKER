@@ -149,15 +149,17 @@ export default function App() {
         api.login(targetIdentifier).then(userData => {
           if (userData && !userData.error) {
             setUser(userData);
+            setViewingUserId(userData.id);
             localStorage.setItem('ergomedi_user', JSON.stringify(userData));
           }
         }).catch(() => {}).finally(() => setLoading(false));
       } 
       // Caso B: El navegador ya tiene una sesión abierta (ej: sesión de Admin)
       else {
-        // Si el usuario actual ya es ese paciente, no hace falta hacer nada extra
+        // Si el usuario actual ya es ese paciente
         if (user.identifier?.toLowerCase() === targetIdentifier.toLowerCase()) {
           setViewingUserId(user.id);
+          setViewingProfile(null);
         } else {
           // Si es Admin/Superusuario, buscar al paciente objetivo y cambiar la vista a él
           setLoading(true);
@@ -168,6 +170,7 @@ export default function App() {
               if (targetPatient) {
                 setViewingUserId(targetPatient.id);
                 setViewingProfile(targetPatient);
+                fetchData(user.id, targetPatient.id, true);
               }
             }
           }).catch(() => {}).finally(() => setLoading(false));
@@ -179,8 +182,9 @@ export default function App() {
   useEffect(() => {
     if (user?.id) {
       // Inicializar viewingUserId al propio usuario si no está seteado
+      const targetId = viewingUserId || user.id;
       if (!viewingUserId) setViewingUserId(user.id);
-      fetchData(user.id, viewingUserId || user.id, true);
+      fetchData(user.id, targetId, true);
       // Cargar lista de pacientes si es admin
       if (user.role === 'admin') {
         api.getUsers(user.id).then(list => {
@@ -194,7 +198,7 @@ export default function App() {
       }
     }
     else setLoading(false);
-  }, [user?.id]);
+  }, [user?.id, viewingUserId]);
 
   // Local-timezone date helper — avoids UTC offset bugs (e.g. UTC-4 users after 8pm)
   const localToday = () => {
