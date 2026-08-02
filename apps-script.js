@@ -753,7 +753,9 @@ function checkAndSendAlerts() {
           var subject = '', body = '', htmlBody = '', tgMsg = '', smsBody = '';
           var time12h = formatTime12h(scheduledTime);
           var tzLabel = getTimezoneLabel(utcOffset);
-          var currentAppUrl = getLatestAppUrl();
+          var baseAppUrl = getLatestAppUrl();
+          // Build a user-specific URL so the link takes each patient directly to their own profile
+          var currentAppUrl = baseAppUrl + '?user=' + encodeURIComponent(identifierVal);
           var actionLinkHtml = '<a href="' + currentAppUrl + '" style="background: linear-gradient(135deg, #0fe0e0 0%, #0088cc 100%); color: #000000; text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: 900; font-size: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(15,224,224,0.3);">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a>';
           var telegramLinkHtml = '👉 <b><a href="' + currentAppUrl + '">✅ Abre ERGOMEDI-TRACKER para confirmar la toma</a></b>';
 

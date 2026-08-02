@@ -131,6 +131,28 @@ export default function App() {
   const [manualLogDate, setManualLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualLogTime, setManualLogTime] = useState("");
 
+  // ── Auto-login from notification link (?user=<identifier>) ───────────
+  // When a patient clicks the link in an email/telegram/whatsapp notification,
+  // the URL contains ?user=<identifier>. If no session is active, auto-login
+  // with that identifier so they land directly on their own profile.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get('user');
+    if (userParam && !user) {
+      // Clean the URL to avoid re-triggering on refresh
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, '', cleanUrl);
+      // Auto-login with the identifier from the notification link
+      setLoading(true);
+      api.login(userParam.trim()).then(userData => {
+        if (userData && !userData.error) {
+          setUser(userData);
+          localStorage.setItem('ergomedi_user', JSON.stringify(userData));
+        }
+      }).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (user?.id) {
       // Inicializar viewingUserId al propio usuario si no está seteado
