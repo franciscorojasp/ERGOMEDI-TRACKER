@@ -614,8 +614,10 @@ function checkAndSendAlerts() {
   var ss          = SpreadsheetApp.getActiveSpreadsheet();
   var usersSheet  = ss.getSheetByName(USERS_SHEET_NAME);
   var medsSheet   = ss.getSheetByName(MEDS_SHEET_NAME);
+  var historySheet = ss.getSheetByName(HISTORY_SHEET_NAME);
   var usersData   = usersSheet.getDataRange().getValues();
   var medsData    = medsSheet.getDataRange().getValues();
+  var historyData = historySheet.getDataRange().getValues();
 
   var nowUtcMs = Date.now();
 
@@ -744,6 +746,48 @@ function checkAndSendAlerts() {
           var diff = Math.abs(nowMins - triggerMins);
           var wrappedDiff = Math.min(diff, 1440 - diff); // handle midnight wrap
           if (wrappedDiff > 1) continue;
+
+          // Cross-verify with the history logs sheet.
+          // If the patient has already confirmed a take for this specific medication
+          // today within ±60 minutes of the scheduled time, skip the alert.
+          var alreadyTaken = false;
+          for (var h = 1; h < historyData.length; h++) {
+            if (String(historyData[h][1]) === userId && String(historyData[h][2]) === medId) {
+              var logDateVal = historyData[h][6];
+              var logDateStr = '';
+              if (logDateVal instanceof Date) {
+                logDateStr = Utilities.formatDate(logDateVal, 'UTC', 'yyyy-MM-dd');
+              } else {
+                logDateStr = String(logDateVal).split('T')[0];
+              }
+
+              if (logDateStr === localDateStr) {
+                var logTimestampVal = historyData[h][5];
+                var logTimeStr = '';
+                if (logTimestampVal instanceof Date) {
+                  logTimeStr = Utilities.formatDate(logTimestampVal, 'UTC', 'HH:mm');
+                } else if (typeof logTimestampVal === 'string' && logTimestampVal.indexOf('T') >= 0) {
+                  var parts = logTimestampVal.split('T')[1].split(':');
+                  logTimeStr = parts[0] + ':' + parts[1];
+                } else {
+                  logTimeStr = String(logTimestampVal);
+                }
+
+                // If logged within ±60 minutes of scheduled time
+                if (logTimeStr.indexOf(':') >= 0) {
+                  var logMins = toMinutes(logTimeStr);
+                  var schedMins = toMinutes(scheduledTime);
+                  var logDiff = Math.abs(logMins - schedMins);
+                  var wrappedLogDiff = Math.min(logDiff, 1440 - logDiff);
+                  if (wrappedLogDiff <= 60) {
+                    alreadyTaken = true;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (alreadyTaken) continue;
 
           // Include local date in dedupeKey for robustness across days
           var dedupeKey = localDateStr + '_' + userId + '_' + medKey + '_' + scheduledTime + '_' + alert.offset;
