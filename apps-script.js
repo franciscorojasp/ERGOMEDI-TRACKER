@@ -639,8 +639,10 @@ function checkAndSendAlerts() {
     var parts = timeStr.split(':');
     var h = parseInt(parts[0]);
     var m = parseInt(parts[1]);
-    var d = new Date(2000, 0, 1, h, m + mins);
-    return Utilities.formatDate(d, 'UTC', 'HH:mm');
+    var total = h * 60 + m + mins;
+    var hh = Math.floor(((total % 1440) + 1440) % 1440 / 60);
+    var mm = ((total % 60) + 60) % 60;
+    return (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
   }
 
   /** Convert "HH:MM" to total minutes since midnight */
@@ -753,28 +755,24 @@ function checkAndSendAlerts() {
           var alreadyTaken = false;
           for (var h = 1; h < historyData.length; h++) {
             if (String(historyData[h][1]) === userId && String(historyData[h][2]) === medId) {
-              var logDateVal = historyData[h][6];
-              var logDateStr = '';
-              if (logDateVal instanceof Date) {
-                logDateStr = Utilities.formatDate(logDateVal, 'UTC', 'yyyy-MM-dd');
-              } else {
-                logDateStr = String(logDateVal).split('T')[0];
+              var logTimestampVal = historyData[h][5];
+              var logDateObj = null;
+              if (logTimestampVal instanceof Date) {
+                logDateObj = logTimestampVal;
+              } else if (typeof logTimestampVal === 'string') {
+                try {
+                  logDateObj = new Date(logTimestampVal);
+                } catch (e) {}
               }
 
-              if (logDateStr === localDateStr) {
-                var logTimestampVal = historyData[h][5];
-                var logTimeStr = '';
-                if (logTimestampVal instanceof Date) {
-                  logTimeStr = Utilities.formatDate(logTimestampVal, 'UTC', 'HH:mm');
-                } else if (typeof logTimestampVal === 'string' && logTimestampVal.indexOf('T') >= 0) {
-                  var parts = logTimestampVal.split('T')[1].split(':');
-                  logTimeStr = parts[0] + ':' + parts[1];
-                } else {
-                  logTimeStr = String(logTimestampVal);
-                }
+              if (logDateObj && !isNaN(logDateObj.getTime())) {
+                // Apply patient's utcOffset to the UTC timestamp to find their true local date and time
+                var userLocalMs = logDateObj.getTime() + utcOffset * 60000;
+                var userLocalDate = new Date(userLocalMs);
+                var logDateStr = Utilities.formatDate(userLocalDate, 'UTC', 'yyyy-MM-dd');
 
-                // If logged within ±60 minutes of scheduled time
-                if (logTimeStr.indexOf(':') >= 0) {
+                if (logDateStr === localDateStr) {
+                  var logTimeStr = Utilities.formatDate(userLocalDate, 'UTC', 'HH:mm');
                   var logMins = toMinutes(logTimeStr);
                   var schedMins = toMinutes(scheduledTime);
                   var logDiff = Math.abs(logMins - schedMins);
