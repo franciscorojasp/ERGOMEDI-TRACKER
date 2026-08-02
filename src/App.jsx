@@ -131,25 +131,48 @@ export default function App() {
   const [manualLogDate, setManualLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualLogTime, setManualLogTime] = useState("");
 
-  // ── Auto-login from notification link (?user=<identifier>) ───────────
-  // When a patient clicks the link in an email/telegram/whatsapp notification,
-  // the URL contains ?user=<identifier>. If no session is active, auto-login
-  // with that identifier so they land directly on their own profile.
+  // ── Auto-login / Switch patient from notification link (?user=<identifier>) ──
+  // When a patient (or admin) clicks the link in a notification,
+  // the URL contains ?user=<identifier>.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const userParam = params.get('user');
-    if (userParam && !user) {
-      // Clean the URL to avoid re-triggering on refresh
+    if (userParam) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, '', cleanUrl);
-      // Auto-login with the identifier from the notification link
-      setLoading(true);
-      api.login(userParam.trim()).then(userData => {
-        if (userData && !userData.error) {
-          setUser(userData);
-          localStorage.setItem('ergomedi_user', JSON.stringify(userData));
+
+      const targetIdentifier = userParam.trim();
+
+      // Caso A: No hay usuario logueado en este navegador -> Hacemos Login directo como ese paciente
+      if (!user) {
+        setLoading(true);
+        api.login(targetIdentifier).then(userData => {
+          if (userData && !userData.error) {
+            setUser(userData);
+            localStorage.setItem('ergomedi_user', JSON.stringify(userData));
+          }
+        }).catch(() => {}).finally(() => setLoading(false));
+      } 
+      // Caso B: El navegador ya tiene una sesión abierta (ej: sesión de Admin)
+      else {
+        // Si el usuario actual ya es ese paciente, no hace falta hacer nada extra
+        if (user.identifier?.toLowerCase() === targetIdentifier.toLowerCase()) {
+          setViewingUserId(user.id);
+        } else {
+          // Si es Admin/Superusuario, buscar al paciente objetivo y cambiar la vista a él
+          setLoading(true);
+          api.getUsers(user.id).then(list => {
+            if (Array.isArray(list)) {
+              setPatientList(list);
+              const targetPatient = list.find(p => p.identifier?.toLowerCase() === targetIdentifier.toLowerCase());
+              if (targetPatient) {
+                setViewingUserId(targetPatient.id);
+                setViewingProfile(targetPatient);
+              }
+            }
+          }).catch(() => {}).finally(() => setLoading(false));
         }
-      }).catch(() => {}).finally(() => setLoading(false));
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
