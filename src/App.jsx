@@ -65,12 +65,14 @@ export default function App() {
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // ── Multi-Paciente: estados de admin ─────────────────────────────────
-  // patientList: lista de todos los pacientes (solo visible para admin)
-  // viewingUserId: ID del paciente cuya data se muestra ahora mismo
+  // ── Multi-Paciente: estados de admin / cuidador ───────────────────────
+  // patientList: lista de todos los pacientes
+  // viewingUserId: ID del paciente cuya data se muestra (persistido en localStorage)
   // viewingProfile: perfil del paciente visto (null = propio perfil)
   const [patientList, setPatientList] = useState([]);
-  const [viewingUserId, setViewingUserId] = useState(null); // null = propio
+  const [viewingUserId, setViewingUserId] = useState(() => {
+    return localStorage.getItem('ergomedi_viewing_user_id') || null;
+  }); // null = propio
   const [viewingProfile, setViewingProfile] = useState(null);
   const [showCreatePatientModal, setShowCreatePatientModal] = useState(false);
   const [createPatientForm, setCreatePatientForm] = useState({ identifier: '', patientName: '', role: 'user' });
@@ -420,7 +422,10 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setViewingUserId(null);
+    setViewingProfile(null);
     localStorage.removeItem('ergomedi_user');
+    localStorage.removeItem('ergomedi_viewing_user_id');
   };
 
   const handleFrequencyChange = (newFreq) => {
@@ -723,6 +728,11 @@ export default function App() {
   const handleSelectPatient = async (patientId) => {
     if (!user || user.role !== 'admin') return;
     setViewingUserId(patientId);
+    if (patientId && patientId !== user.id) {
+      localStorage.setItem('ergomedi_viewing_user_id', patientId);
+    } else {
+      localStorage.removeItem('ergomedi_viewing_user_id');
+    }
     const patient = patientList.find(p => p.id === patientId);
     setViewingProfile(patient || null);
     setLoading(true);
