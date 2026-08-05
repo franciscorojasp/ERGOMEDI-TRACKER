@@ -843,9 +843,9 @@ export default function App() {
     try {
       setBackgroundSyncing(true);
       const res = await api.deleteUser(user.id, usr.id);
-      if (res.error) {
-        alert(res.error);
-      } else {
+      if (res && res.error) {
+        alert(`⚠️ ${res.error}`);
+      } else if (res && res.success) {
         if (viewingUserId === usr.id) {
           setViewingUserId(null);
           setViewingProfile(null);
@@ -853,9 +853,11 @@ export default function App() {
         }
         const list = await api.getUsers(user.id);
         if (Array.isArray(list)) setPatientList(list);
+      } else {
+        alert('No se pudo confirmar la eliminación en el servidor.');
       }
     } catch (err) {
-      alert('Error al eliminar usuario.');
+      alert('Error de conexión al eliminar usuario.');
     } finally {
       setBackgroundSyncing(false);
     }

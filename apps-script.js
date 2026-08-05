@@ -244,17 +244,24 @@ function doGet(e) {
       var newTelegram   = String(e.parameter.telegramChatIds || '').trim();
       
       if (!newIdentifier) {
-        result = { error: 'identifier requerido' };
+        result = { error: 'El identificador de usuario es requerido.' };
       } else {
-        var alreadyExists = false;
+        var duplicateIdentifier = false;
+        var duplicateEmail = false;
         for (var ci = 1; ci < cuData.length; ci++) {
-          if (String(cuData[ci][1]).toLowerCase() === newIdentifier.toLowerCase()) {
-            alreadyExists = true;
-            break;
+          var existingIdent = String(cuData[ci][1] || '').trim().toLowerCase();
+          var existingEmail = String(cuData[ci][11] || '').trim().toLowerCase();
+          if (existingIdent && existingIdent === newIdentifier.toLowerCase()) {
+            duplicateIdentifier = true;
+          }
+          if (newEmail && existingEmail && existingEmail === newEmail.toLowerCase()) {
+            duplicateEmail = true;
           }
         }
-        if (alreadyExists) {
-          result = { error: 'El identificador ya está registrado' };
+        if (duplicateIdentifier) {
+          result = { error: 'El identificador o nombre de usuario ya se encuentra registrado.' };
+        } else if (duplicateEmail) {
+          result = { error: 'El correo electrónico ya se encuentra asociado a otra cuenta registrada.' };
         } else {
           var newUUID = Utilities.getUuid();
           var utcOff  = parseInt(e.parameter.utcOffset) || 0;
@@ -272,27 +279,54 @@ function doGet(e) {
     } else {
       var uuSheet = ss.getSheetByName(USERS_SHEET_NAME);
       var uuData  = uuSheet.getDataRange().getValues();
-      var targetId = e.parameter.targetUserId;
+      var targetId = String(e.parameter.targetUserId || '').trim();
       var newRole  = e.parameter.role;
       var newName  = e.parameter.patientName;
-      var newIdent = e.parameter.identifier;
-      var newEmail = e.parameter.email;
+      var newIdent = e.parameter.identifier ? String(e.parameter.identifier).trim() : undefined;
+      var newEmail = e.parameter.email ? String(e.parameter.email).trim() : undefined;
       var newTel   = e.parameter.telegramChatIds;
 
-      for (var ui = 1; ui < uuData.length; ui++) {
-        if (String(uuData[ui][0]) === String(targetId)) {
-          if (newRole  !== undefined) uuSheet.getRange(ui + 1, 5).setValue(newRole);
-          if (newName  !== undefined) {
-            uuSheet.getRange(ui + 1, 3).setValue(newName);
-            uuSheet.getRange(ui + 1, 8).setValue(newName);
+      var emailDuplicate = false;
+      var identDuplicate = false;
+
+      if (newEmail || newIdent) {
+        for (var uiCheck = 1; uiCheck < uuData.length; uiCheck++) {
+          var currentId = String(uuData[uiCheck][0]).trim();
+          if (currentId !== targetId) {
+            var exIdent = String(uuData[uiCheck][1] || '').trim().toLowerCase();
+            var exEmail = String(uuData[uiCheck][11] || '').trim().toLowerCase();
+            if (newIdent && exIdent && exIdent === newIdent.toLowerCase()) identDuplicate = true;
+            if (newEmail && exEmail && exEmail === newEmail.toLowerCase()) emailDuplicate = true;
           }
-          if (newIdent !== undefined) uuSheet.getRange(ui + 1, 2).setValue(newIdent);
-          if (newEmail !== undefined) uuSheet.getRange(ui + 1, 12).setValue(newEmail);
-          if (newTel   !== undefined) uuSheet.getRange(ui + 1, 13).setValue(newTel);
-          break;
         }
       }
-      result = { success: true };
+
+      if (identDuplicate) {
+        result = { error: 'El identificador de usuario pertenece a otra cuenta.' };
+      } else if (emailDuplicate) {
+        result = { error: 'El correo electrónico ya se encuentra registrado por otro usuario.' };
+      } else {
+        var foundUser = false;
+        for (var ui = 1; ui < uuData.length; ui++) {
+          if (String(uuData[ui][0]) === targetId) {
+            foundUser = true;
+            if (newRole  !== undefined) uuSheet.getRange(ui + 1, 5).setValue(newRole);
+            if (newName  !== undefined) {
+              uuSheet.getRange(ui + 1, 3).setValue(newName);
+              uuSheet.getRange(ui + 1, 8).setValue(newName);
+            }
+            if (newIdent !== undefined) uuSheet.getRange(ui + 1, 2).setValue(newIdent);
+            if (newEmail !== undefined) uuSheet.getRange(ui + 1, 12).setValue(newEmail);
+            if (newTel   !== undefined) uuSheet.getRange(ui + 1, 13).setValue(newTel);
+            break;
+          }
+        }
+        if (foundUser) {
+          result = { success: true };
+        } else {
+          result = { error: 'Usuario no encontrado.' };
+        }
+      }
     }
   }
 
@@ -303,19 +337,25 @@ function doGet(e) {
     } else {
       var duSheet = ss.getSheetByName(USERS_SHEET_NAME);
       var duData  = duSheet.getDataRange().getValues();
-      var delTargetId = e.parameter.targetUserId;
+      var delTargetId = String(e.parameter.targetUserId || '').trim();
       
       // Don't allow admin to delete admin-001 or admin-002 root accounts
       if (delTargetId === 'admin-001' || delTargetId === 'admin-002') {
         result = { error: 'No se puede eliminar la cuenta de administración principal.' };
       } else {
+        var deleted = false;
         for (var di = duData.length - 1; di >= 1; di--) {
-          if (String(duData[di][0]) === String(delTargetId)) {
+          if (String(duData[di][0]).trim() === delTargetId) {
             duSheet.deleteRow(di + 1);
+            deleted = true;
             break;
           }
         }
-        result = { success: true };
+        if (deleted) {
+          result = { success: true };
+        } else {
+          result = { error: 'Usuario no encontrado en la base de datos.' };
+        }
       }
     }
   }
