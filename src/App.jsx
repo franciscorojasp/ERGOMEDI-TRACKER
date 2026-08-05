@@ -1797,6 +1797,38 @@ export default function App() {
                           )}
                         </button>
 
+                        {/* Manual intake button per card */}
+                        <button
+                          onClick={() => {
+                            setManualLogMedId(med.id);
+                            setManualLogDate(localToday());
+                            const now = new Date();
+                            setManualLogTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+                            setShowManualLogModal(true);
+                          }}
+                          title="Registrar toma manual de este medicamento"
+                          style={{
+                            height: '52px',
+                            padding: '0 14px',
+                            flexShrink: 0,
+                            background: 'transparent',
+                            border: '1.5px solid var(--border)',
+                            borderRadius: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            cursor: 'pointer',
+                            color: 'var(--text-muted)',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            transition: 'border-color 0.2s, color 0.2s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary-light)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                        >
+                          <Plus size={16} /> TOMA MANUAL
+                        </button>
+
                         {/* Undo button — only visible when at least 1 dose was logged today and not completed */}
                         {takenToday > 0 && !isCompleted && (
                           <button
