@@ -265,6 +265,61 @@ function doGet(e) {
     }
   }
 
+  // ---------- UPDATE USER ROLE / DETAILS (solo admin) ----------
+  else if (action === 'updateUser' && userId) {
+    if (!isAdminUser(ss, userId)) {
+      result = { error: 'Unauthorized' };
+    } else {
+      var uuSheet = ss.getSheetByName(USERS_SHEET_NAME);
+      var uuData  = uuSheet.getDataRange().getValues();
+      var targetId = e.parameter.targetUserId;
+      var newRole  = e.parameter.role;
+      var newName  = e.parameter.patientName;
+      var newIdent = e.parameter.identifier;
+      var newEmail = e.parameter.email;
+      var newTel   = e.parameter.telegramChatIds;
+
+      for (var ui = 1; ui < uuData.length; ui++) {
+        if (String(uuData[ui][0]) === String(targetId)) {
+          if (newRole  !== undefined) uuSheet.getRange(ui + 1, 5).setValue(newRole);
+          if (newName  !== undefined) {
+            uuSheet.getRange(ui + 1, 3).setValue(newName);
+            uuSheet.getRange(ui + 1, 8).setValue(newName);
+          }
+          if (newIdent !== undefined) uuSheet.getRange(ui + 1, 2).setValue(newIdent);
+          if (newEmail !== undefined) uuSheet.getRange(ui + 1, 12).setValue(newEmail);
+          if (newTel   !== undefined) uuSheet.getRange(ui + 1, 13).setValue(newTel);
+          break;
+        }
+      }
+      result = { success: true };
+    }
+  }
+
+  // ---------- DELETE USER (solo admin) ----------
+  else if (action === 'deleteUser' && userId) {
+    if (!isAdminUser(ss, userId)) {
+      result = { error: 'Unauthorized' };
+    } else {
+      var duSheet = ss.getSheetByName(USERS_SHEET_NAME);
+      var duData  = duSheet.getDataRange().getValues();
+      var delTargetId = e.parameter.targetUserId;
+      
+      // Don't allow admin to delete admin-001 or admin-002 root accounts
+      if (delTargetId === 'admin-001' || delTargetId === 'admin-002') {
+        result = { error: 'No se puede eliminar la cuenta de administración principal.' };
+      } else {
+        for (var di = duData.length - 1; di >= 1; di--) {
+          if (String(duData[di][0]) === String(delTargetId)) {
+            duSheet.deleteRow(di + 1);
+            break;
+          }
+        }
+        result = { success: true };
+      }
+    }
+  }
+
   // ---------- UPDATE PROFILE ----------
   else if (action === 'updateProfile' && userId) {
     var effectiveUpdateId = getEffectiveUserId(ss, userId, targetUserId);

@@ -29,6 +29,17 @@ export const api = {
     return this.jsonp('createUser', { userId: adminUserId, identifier, patientName, role, email, telegramChatIds, utcOffset });
   },
 
+  /** Admin only: update user details and role */
+  async updateUser(adminUserId, targetUserId, updateData) {
+    const params = { userId: adminUserId, targetUserId, ...updateData };
+    return this.jsonp('updateUser', params);
+  },
+
+  /** Admin only: delete a user account */
+  async deleteUser(adminUserId, targetUserId) {
+    return this.jsonp('deleteUser', { userId: adminUserId, targetUserId });
+  },
+
   async testTelegram(telegramChatIds, patientName = '') {
     return this.jsonp('testTelegram', { telegramChatIds, patientName });
   },

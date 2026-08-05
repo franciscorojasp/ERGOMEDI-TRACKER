@@ -694,7 +694,10 @@ export default function App() {
     if (!manualLogMedId || !manualLogDate || !manualLogTime) return;
     const med = meds.find(m => m.id === manualLogMedId);
     if (!med) return;
-    setLoading(true);
+    
+    // Close modal immediately and update state locally (smooth background sync, no full reload UI)
+    setShowManualLogModal(false);
+    setBackgroundSyncing(true);
     const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       const [yr, mo, dy] = manualLogDate.split('-').map(Number);
@@ -711,15 +714,14 @@ export default function App() {
       };
 
       await api.addManualHistoryLog(log, user.id, passTarget);
-      setShowManualLogModal(false);
       setManualLogMedId("");
       setManualLogTime("");
-      await fetchData(user.id, effectiveUserId);
+      await fetchData(user.id, effectiveUserId, false);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al registrar la toma manual.");
     } finally {
-      setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -761,7 +763,13 @@ export default function App() {
     }
   };
 
-  /** Admin crea una nueva cuenta de paciente */
+  /** Admin crea una nueva cuenta de usuario/paciente */
+  const [editingUser, setEditingUser] = useState(null);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editUserForm, setEditUserForm] = useState({ identifier: '', patientName: '', role: 'user', email: '', telegramChatIds: '' });
+  const [editUserLoading, setEditUserLoading] = useState(false);
+  const [editUserError, setEditUserError] = useState('');
+
   const handleCreatePatient = async (e) => {
     e.preventDefault();
     if (!createPatientForm.identifier.trim()) return;
@@ -787,6 +795,69 @@ export default function App() {
       setCreatePatientError('Error de conexión. Inténtalo de nuevo.');
     } finally {
       setCreatePatientLoading(false);
+    }
+  };
+
+  const handleOpenEditUser = (usr) => {
+    setEditingUser(usr);
+    setEditUserForm({
+      identifier: usr.identifier || '',
+      patientName: usr.patientName || '',
+      role: usr.role || 'user',
+      email: usr.email || '',
+      telegramChatIds: usr.telegramChatIds || ''
+    });
+    setEditUserError('');
+    setShowEditUserModal(true);
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditUserLoading(true);
+    setEditUserError('');
+    try {
+      const res = await api.updateUser(user.id, editingUser.id, editUserForm);
+      if (res.error) {
+        setEditUserError(res.error);
+      } else {
+        const list = await api.getUsers(user.id);
+        if (Array.isArray(list)) setPatientList(list);
+        setShowEditUserModal(false);
+        setEditingUser(null);
+      }
+    } catch (err) {
+      setEditUserError('Error al actualizar el usuario.');
+    } finally {
+      setEditUserLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (usr) => {
+    if (!usr) return;
+    if (usr.id === 'admin-001' || usr.id === 'admin-002') {
+      alert('No se puede eliminar la cuenta principal de administración.');
+      return;
+    }
+    if (!window.confirm(`¿Estás seguro de eliminar el usuario "${usr.patientName || usr.identifier}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      setLoading(true);
+      const res = await api.deleteUser(user.id, usr.id);
+      if (res.error) {
+        alert(res.error);
+      } else {
+        if (viewingUserId === usr.id) {
+          setViewingUserId(null);
+          setViewingProfile(null);
+          localStorage.removeItem('ergomedi_viewing_user_id');
+        }
+        const list = await api.getUsers(user.id);
+        if (Array.isArray(list)) setPatientList(list);
+      }
+    } catch (err) {
+      alert('Error al eliminar usuario.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1214,6 +1285,23 @@ export default function App() {
             <Settings size={20} />
             {sidebarExpanded && <span className="sidebar-menu-text">Ajustes</span>}
           </div>
+          {user.role === 'admin' && (
+            <div 
+              className={`sidebar-menu-item ${activeTab === 'users' ? 'active' : ''}`} 
+              onClick={async () => {
+                setActiveTab('users');
+                setMobileSidebarOpen(false);
+                try {
+                  const list = await api.getUsers(user.id);
+                  if (Array.isArray(list)) setPatientList(list);
+                } catch (e) {}
+              }}
+              title="Gestión de Usuarios"
+            >
+              <Users size={20} />
+              {sidebarExpanded && <span className="sidebar-menu-text">Usuarios</span>}
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -2347,11 +2435,104 @@ export default function App() {
                       <LogOut size={20} /> SALIR
                     </button>
                   </div>
-               
                </div>
             </div>
           </div>
-        )}
+        ) : activeTab === 'users' && user.role === 'admin' ? (
+          <div className="animate-fade">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 900 }}>GESTIÓN DE USUARIOS</h2>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, margin: 0 }}>
+                  Administración centralizada de cuentas, roles y accesos
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setCreatePatientForm({ identifier: '', patientName: '', role: 'user' });
+                  setCreatePatientError('');
+                  setShowCreatePatientModal(true);
+                }}
+                className="btn-primary" 
+                style={{ height: '42px', fontSize: '0.75rem', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <UserPlus size={18} /> REGISTRAR NUEVO USUARIO
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+              {patientList.map(usr => {
+                const isAdmin = usr.role === 'admin';
+                const isCurrent = usr.id === user.id;
+                return (
+                  <div key={usr.id} className="card animate-fade" style={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '14px', border: isCurrent ? '1.5px solid var(--primary-light)' : '1px solid var(--border)' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: isAdmin ? 'rgba(245, 158, 11, 0.15)' : 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {isAdmin ? <Shield size={20} style={{ color: '#f59e0b' }} /> : <User size={20} style={{ color: 'var(--primary-light)' }} />}
+                          </div>
+                          <div>
+                            <h4 style={{ fontWeight: 900, fontSize: '0.95rem', margin: 0 }}>
+                              {usr.patientName || usr.identifier.split('@')[0]}
+                            </h4>
+                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0, fontWeight: 700 }}>
+                              {usr.identifier}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span style={{
+                          fontSize: '0.6rem',
+                          fontWeight: 900,
+                          padding: '3px 8px',
+                          borderRadius: '12px',
+                          textTransform: 'uppercase',
+                          background: isAdmin ? 'rgba(245, 158, 11, 0.2)' : 'rgba(15, 224, 224, 0.15)',
+                          color: isAdmin ? '#f59e0b' : 'var(--primary-light)',
+                          border: `1px solid ${isAdmin ? '#f59e0b' : 'var(--primary-light)'}`
+                        }}>
+                          {isAdmin ? 'ADMIN' : 'USUARIO'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)', background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '10px' }}>
+                        <div><strong>Email:</strong> {usr.email || '(No asignado)'}</div>
+                        <div><strong>Telegram IDs:</strong> {usr.telegramChatIds || '(Sin notificaciones)'}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+                      <button
+                        onClick={() => handleSelectPatient(usr.id)}
+                        className="btn-primary"
+                        style={{ flex: 2, height: '36px', fontSize: '0.7rem', background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)' }}
+                      >
+                        <Activity size={14} /> VER EXPEDIENTE
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditUser(usr)}
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '10px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                        title="Editar Usuario / Asignar Rol"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      {usr.id !== 'admin-001' && usr.id !== 'admin-002' && !isCurrent && (
+                        <button
+                          onClick={() => handleDeleteUser(usr)}
+                          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer' }}
+                          title="Eliminar Usuario"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
 
@@ -2680,10 +2861,118 @@ export default function App() {
         </div>
       )}
 
+      {showEditUserModal && editingUser && (
+        <div className="modal-overlay">
+          <div className="modal-box animate-fade" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3 style={{ fontWeight: 900, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Pencil size={18} style={{ color: 'var(--primary-light)' }} /> EDITAR USUARIO / ASIGNAR ROL
+              </h3>
+              <X onClick={() => { setShowEditUserModal(false); setEditingUser(null); setEditUserError(''); }} size={22} style={{ cursor: 'pointer' }} />
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleUpdateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    IDENTIFICADOR DE ACCESO *
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    required 
+                    value={editUserForm.identifier} 
+                    onChange={e => setEditUserForm({...editUserForm, identifier: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    NOMBRE COMPLETO
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    value={editUserForm.patientName} 
+                    onChange={e => setEditUserForm({...editUserForm, patientName: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    ROL EN EL SISTEMA
+                  </label>
+                  <select 
+                    className="input-field" 
+                    value={editUserForm.role} 
+                    onChange={e => setEditUserForm({...editUserForm, role: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px', color: 'var(--text-primary)' }}
+                  >
+                    <option value="user">PACIENTE ESTÁNDAR</option>
+                    <option value="admin">SUPERADMINISTRADOR</option>
+                  </select>
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    CORREO ELECTRÓNICO
+                  </label>
+                  <input 
+                    type="email" 
+                    className="input-field" 
+                    value={editUserForm.email} 
+                    onChange={e => setEditUserForm({...editUserForm, email: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--primary-light)' }}>
+                    CHAT IDs TELEGRAM (SEPARADOS POR COMAS)
+                  </label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    value={editUserForm.telegramChatIds} 
+                    onChange={e => setEditUserForm({...editUserForm, telegramChatIds: e.target.value})} 
+                    style={{ background: 'var(--bg-main)', padding: '9px 14px' }} 
+                  />
+                </div>
+
+                {editUserError && (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '10px 14px', borderRadius: '12px', fontSize: '0.75rem', border: '1px solid rgba(239, 68, 68, 0.2)', fontWeight: 700 }}>
+                    <AlertCircle size={14} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} /> {editUserError}
+                  </div>
+                )}
+
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={editUserLoading}
+                  style={{ height: '48px', fontWeight: 900, marginTop: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  {editUserLoading ? 'GUARDANDO...' : 'GUARDAR CAMBIOS'} <Save size={16} />
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="nav-bottom">
         <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}><Activity size={24} /><span>Dashboard</span></div>
         <div className={`nav-item ${activeTab === 'historial' ? 'active' : ''}`} onClick={() => setActiveTab('historial')}><History size={24} /><span>Historial</span></div>
         <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}><Settings size={24} /><span>Ajustes</span></div>
+        {user.role === 'admin' && (
+          <div className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} onClick={async () => {
+            setActiveTab('users');
+            try {
+              const list = await api.getUsers(user.id);
+              if (Array.isArray(list)) setPatientList(list);
+            } catch (e) {}
+          }}><Users size={24} /><span>Usuarios</span></div>
+        )}
       </nav>
     </div>
   );
