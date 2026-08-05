@@ -2030,7 +2030,7 @@ export default function App() {
               ))
             )}
           </div>
-        ) : (
+        ) : activeTab === 'profile' ? (
           <div className="animate-fade">
             <h2 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '24px' }}>AJUSTES</h2>
             <div className="card" style={{ padding: '32px' }}>
