@@ -644,16 +644,16 @@ export default function App() {
 
   const deleteHistoryLog = async (logId) => {
     if (!window.confirm("¿Estás seguro de eliminar este registro de toma? Esto recalculará las dosis tomadas del plan.")) return;
-    setLoading(true);
+    setBackgroundSyncing(true);
     const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       await api.deleteHistoryLog(logId, user.id, passTarget);
-      await fetchData(user.id, effectiveUserId);
+      await fetchData(user.id, effectiveUserId, false);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al eliminar la toma del historial.");
     } finally {
-      setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -669,7 +669,8 @@ export default function App() {
   const saveEditHistory = async (e) => {
     e.preventDefault();
     if (!editingHistoryLog || !editHistoryDate || !editHistoryTime) return;
-    setLoading(true);
+    setShowEditHistoryModal(false);
+    setBackgroundSyncing(true);
     const passTarget = isViewingOtherPatient ? effectiveUserId : null;
     try {
       const [yr, mo, dy] = editHistoryDate.split('-').map(Number);
@@ -678,14 +679,13 @@ export default function App() {
       const newTimestamp = newDate.toISOString();
 
       await api.editHistoryLog(editingHistoryLog.id, newTimestamp, editHistoryDate, user.id, passTarget);
-      setShowEditHistoryModal(false);
       setEditingHistoryLog(null);
-      await fetchData(user.id, effectiveUserId);
+      await fetchData(user.id, effectiveUserId, false);
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al guardar los cambios en la toma.");
     } finally {
-      setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -737,7 +737,7 @@ export default function App() {
     }
     const patient = patientList.find(p => p.id === patientId);
     setViewingProfile(patient || null);
-    setLoading(true);
+    setBackgroundSyncing(true);
     const passTarget = patientId !== user.id ? patientId : null;
     try {
       const [medsList, historyList] = await Promise.all([
@@ -759,7 +759,7 @@ export default function App() {
     } catch (err) {
       setErrorMessage('Error al cargar datos del paciente.');
     } finally {
-      setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -841,7 +841,7 @@ export default function App() {
     }
     if (!window.confirm(`¿Estás seguro de eliminar el usuario "${usr.patientName || usr.identifier}"? Esta acción no se puede deshacer.`)) return;
     try {
-      setLoading(true);
+      setBackgroundSyncing(true);
       const res = await api.deleteUser(user.id, usr.id);
       if (res.error) {
         alert(res.error);
@@ -857,7 +857,7 @@ export default function App() {
     } catch (err) {
       alert('Error al eliminar usuario.');
     } finally {
-      setLoading(false);
+      setBackgroundSyncing(false);
     }
   };
 
@@ -1356,7 +1356,24 @@ export default function App() {
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {backgroundSyncing && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--primary-light)' }} />}
+            {backgroundSyncing && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(15, 224, 224, 0.15)',
+                border: '1px solid var(--primary-light)',
+                color: 'var(--primary-light)',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                letterSpacing: '0.5px'
+              }}>
+                <RefreshCw size={13} className="animate-spin" />
+                <span>Actualización en curso...</span>
+              </div>
+            )}
             
             {user.role === 'admin' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
