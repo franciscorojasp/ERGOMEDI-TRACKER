@@ -1463,7 +1463,7 @@ export default function App() {
                     {patientList.map(p => (
                       p.id !== user.id && (
                         <option key={p.id} value={p.id}>
-                          👤 {p.patientName || p.identifier.split('@')[0]} ({p.identifier})
+                          👤 {p.patientName || (typeof p.identifier === 'string' ? p.identifier.split('@')[0] : 'Paciente')} ({p.identifier || 'Sin ID'})
                         </option>
                       )
                     ))}
@@ -1476,7 +1476,7 @@ export default function App() {
             <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer', background: 'var(--primary-dim)', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
                <User size={16} style={{ color: 'var(--primary-light)' }} />
                <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--primary-light)', textTransform: 'uppercase' }}>
-                 {user.role === 'admin' ? 'SUPER USUARIO' : user.identifier.split('@')[0]}
+                 {user.role === 'admin' ? 'SUPER USUARIO' : (typeof user.identifier === 'string' ? user.identifier.split('@')[0] : 'USUARIO')}
                </span>
             </div>
           </div>
@@ -1500,7 +1500,7 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Users size={18} style={{ color: '#f59e0b', flexShrink: 0 }} />
                 <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b' }}>
-                  VIENDO REGISTRO DE: <span style={{ textDecoration: 'underline', color: 'white', fontWeight: 900 }}>{activeProfile.patientName || activeProfile.identifier.split('@')[0]}</span> ({activeProfile.identifier})
+                  VIENDO REGISTRO DE: <span style={{ textDecoration: 'underline', color: 'white', fontWeight: 900 }}>{activeProfile.patientName || (typeof activeProfile.identifier === 'string' ? activeProfile.identifier.split('@')[0] : 'Paciente')}</span> ({activeProfile.identifier || ''})
                 </p>
               </div>
               <button
@@ -1957,15 +1957,16 @@ export default function App() {
                         <span style={{ color: isCompleted ? '#10b981' : 'var(--primary-light)' }}>{progress}% COMPLETADO</span>
                         <span>{med.dosesTaken} / {totalNeeded} TOMAS TOTALES</span>
                       </div>
-                      {/* Action buttons row */}
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '20px', alignItems: 'stretch' }}>
+                      {/* Action buttons area */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+                        {/* Primary action: Confirm dose */}
                         <button 
                           disabled={isCompleted || isDoneToday} 
                           onClick={() => markAsTaken(med)} 
                           className="btn-primary" 
                           style={{ 
-                            flex: 1,
-                            height: '52px', 
+                            width: '100%',
+                            height: '46px', 
                             background: isCompleted
                               ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.25))'
                               : isDoneToday
@@ -1979,6 +1980,8 @@ export default function App() {
                                 : 'none',
                             opacity: (isCompleted || isDoneToday) ? 0.9 : 1,
                             cursor: (isCompleted || isDoneToday) ? 'default' : 'pointer',
+                            fontSize: '0.82rem',
+                            fontWeight: 900
                           }}
                         >
                           {isCompleted ? (
@@ -1994,92 +1997,98 @@ export default function App() {
                           )}
                         </button>
 
-                        {/* Manual intake button per card */}
-                        <button
-                          onClick={() => {
-                            setManualLogMedId(med.id);
-                            setManualLogDate(localToday());
-                            const now = new Date();
-                            setManualLogTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-                            setShowManualLogModal(true);
-                          }}
-                          title="Registrar toma manual de este medicamento"
-                          style={{
-                            height: '52px',
-                            padding: '0 14px',
-                            flexShrink: 0,
-                            background: 'transparent',
-                            border: '1.5px solid var(--border)',
-                            borderRadius: '14px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            cursor: 'pointer',
-                            color: 'var(--text-muted)',
-                            fontSize: '0.72rem',
-                            fontWeight: 800,
-                            transition: 'border-color 0.2s, color 0.2s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary-light)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                        >
-                          <Plus size={16} /> TOMA MANUAL
-                        </button>
-
-                        {/* Undo button — only visible when at least 1 dose was logged today and not completed */}
-                        {takenToday > 0 && !isCompleted && (
+                        {/* Secondary actions row: Toma Manual, Culminar, Deshacer */}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%' }}>
+                          {/* Manual intake button */}
                           <button
-                            onClick={() => undoLastDose(med)}
-                            title="Deshacer última toma registrada"
+                            onClick={() => {
+                              setManualLogMedId(med.id);
+                              setManualLogDate(localToday());
+                              const now = new Date();
+                              setManualLogTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+                              setShowManualLogModal(true);
+                            }}
+                            title="Registrar toma manual de este medicamento"
                             style={{
-                              height: '52px',
-                              width: '52px',
-                              flexShrink: 0,
-                              background: 'transparent',
-                              border: '1.5px solid var(--border)',
-                              borderRadius: '14px',
+                              flex: 1,
+                              height: '36px',
+                              padding: '0 8px',
+                              background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid var(--border)',
+                              borderRadius: '10px',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
+                              gap: '4px',
                               cursor: 'pointer',
                               color: 'var(--text-muted)',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              whiteSpace: 'nowrap',
                               transition: 'border-color 0.2s, color 0.2s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary-light)'; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                           >
-                            <RotateCcw size={18} />
+                            <Plus size={14} /> TOMA MANUAL
                           </button>
-                        )}
 
-                        {/* Complete Treatment button — only visible for active (non-completed) plans */}
-                        {!isCompleted && (
-                          <button
-                            onClick={() => markTreatmentComplete(med)}
-                            title="Marcar tratamiento como culminado"
-                            style={{
-                              height: '52px',
-                              padding: '0 14px',
-                              flexShrink: 0,
-                              background: 'rgba(16,185,129,0.08)',
-                              border: '1.5px solid rgba(16,185,129,0.4)',
-                              borderRadius: '14px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              cursor: 'pointer',
-                              color: '#10b981',
-                              fontSize: '0.68rem',
-                              fontWeight: 900,
-                              transition: 'background 0.2s, border-color 0.2s',
-                              letterSpacing: '0.3px',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = '#10b981'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'; }}
-                          >
-                            <CheckCircle2 size={16} /> CULMINAR
-                          </button>
-                        )}
+                          {/* Complete Treatment button — only visible for active (non-completed) plans */}
+                          {!isCompleted && (
+                            <button
+                              onClick={() => markTreatmentComplete(med)}
+                              title="Marcar tratamiento como culminado"
+                              style={{
+                                flex: 1,
+                                height: '36px',
+                                padding: '0 8px',
+                                background: 'rgba(16,185,129,0.08)',
+                                border: '1px solid rgba(16,185,129,0.3)',
+                                borderRadius: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                                color: '#10b981',
+                                fontSize: '0.68rem',
+                                fontWeight: 900,
+                                whiteSpace: 'nowrap',
+                                transition: 'background 0.2s, border-color 0.2s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = '#10b981'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.3)'; }}
+                            >
+                              <CheckCircle2 size={14} /> CULMINAR
+                            </button>
+                          )}
+
+                          {/* Undo button — only visible when at least 1 dose was logged today and not completed */}
+                          {takenToday > 0 && !isCompleted && (
+                            <button
+                              onClick={() => undoLastDose(med)}
+                              title="Deshacer última toma registrada"
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                flexShrink: 0,
+                                background: 'transparent',
+                                border: '1px solid var(--border)',
+                                borderRadius: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: 'var(--text-muted)',
+                                transition: 'border-color 0.2s, color 0.2s',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -2612,10 +2621,10 @@ export default function App() {
                           </div>
                           <div>
                             <h4 style={{ fontWeight: 900, fontSize: '0.95rem', margin: 0 }}>
-                              {usr.patientName || usr.identifier.split('@')[0]}
+                              {usr.patientName || (typeof usr.identifier === 'string' ? usr.identifier.split('@')[0] : 'Usuario')}
                             </h4>
                             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0, fontWeight: 700 }}>
-                              {usr.identifier}
+                              {usr.identifier || 'Sin identificador'}
                             </p>
                           </div>
                         </div>
