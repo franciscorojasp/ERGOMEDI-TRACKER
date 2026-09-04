@@ -146,6 +146,8 @@ function _checkMeds(meds) {
 
   meds.forEach(med => {
     if (!Array.isArray(med.times)) return;
+    // Skip this medication if the user has disabled its alerts
+    if (med.alertsEnabled === false) return;
 
     med.times.forEach(scheduledTime => {
       // Only 2 alerts: 5 minutes before and exact time

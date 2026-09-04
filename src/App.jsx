@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Bell, CheckCircle2, Trash2, Clock, Pill, 
+  Plus, Bell, BellOff, CheckCircle2, Trash2, Clock, Pill, 
   Calendar, AlertCircle, Settings, X, Save, FileText, 
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
@@ -476,6 +476,60 @@ export default function App() {
     } catch (err) {
       setMeds(oldMeds);
       setErrorMessage("Error al eliminar el plan. Intenta nuevamente.");
+    }
+  };
+
+  /** Toggle alerts (alertsEnabled) for a single medication */
+  const toggleMedAlerts = async (med) => {
+    const newEnabled = med.alertsEnabled === false ? true : false;
+    const updatedMed = { ...med, alertsEnabled: newEnabled };
+    // Optimistic update
+    setMeds(prev => prev.map(m => m.id === med.id ? updatedMed : m));
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
+    try {
+      await api.saveMed(updatedMed, user.id, passTarget);
+    } catch (err) {
+      // Revert on error
+      setMeds(prev => prev.map(m => m.id === med.id ? med : m));
+      setErrorMessage("Error al actualizar alertas del medicamento.");
+    }
+  };
+
+  /** Mark a treatment as 100% complete immediately */
+  const markTreatmentComplete = async (med) => {
+    const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
+    if (!window.confirm(`¿Marcar el tratamiento de "${med.name}" como culminado? Esto establecerá las tomas al máximo (${totalNeeded}).`)) return;
+    const updatedMed = {
+      ...med,
+      dosesTaken: totalNeeded,
+      takenTodayCount: med.timesPerDay || 1,
+      lastResetDate: localToday(),
+    };
+    // Optimistic update
+    setMeds(prev => prev.map(m => m.id === med.id ? updatedMed : m));
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
+    try {
+      await api.saveMed(updatedMed, user.id, passTarget);
+      fetchData(user.id, effectiveUserId);
+    } catch (err) {
+      setMeds(prev => prev.map(m => m.id === med.id ? med : m));
+      setErrorMessage("Error al culminar el tratamiento.");
+    }
+  };
+
+  /** Toggle alerts for ALL medications at once */
+  const toggleAllAlerts = async () => {
+    // If at least one is enabled → disable all; otherwise enable all
+    const anyEnabled = meds.some(m => m.alertsEnabled !== false);
+    const newEnabled = !anyEnabled;
+    const updated = meds.map(m => ({ ...m, alertsEnabled: newEnabled }));
+    setMeds(updated);
+    const passTarget = isViewingOtherPatient ? effectiveUserId : null;
+    try {
+      await Promise.all(updated.map(m => api.saveMed(m, user.id, passTarget)));
+    } catch (err) {
+      setErrorMessage("Error al actualizar las alertas globales.");
+      fetchData(user.id, effectiveUserId); // Revert from server
     }
   };
 
@@ -997,7 +1051,7 @@ export default function App() {
         6: { cellWidth: 25, halign: 'center', valign: 'top', fontStyle: 'bold' } // PROGRESO
       },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 6) {
+        if (data.section === 'body' && data.column && data.column.index === 6) {
           const rawText = data.cell.text[0] || '0%';
           const textContent = rawText.split('\n')[0] || '0%';
           const percent = Math.min(100, Math.max(0, parseInt(textContent.replace('%', ''), 10) || 0));
@@ -1509,6 +1563,29 @@ export default function App() {
                     <span className="status-chip-count">{opt.count}</span>
                   </button>
                 ))}
+                {/* Global alert mute/unmute button */}
+                {meds.length > 0 && (() => {
+                  const allAlertsEnabled = meds.some(m => m.alertsEnabled !== false);
+                  return (
+                    <button
+                      onClick={toggleAllAlerts}
+                      title={allAlertsEnabled ? 'Silenciar todas las alertas de medicamentos' : 'Activar todas las alertas de medicamentos'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '5px',
+                        padding: '5px 12px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800,
+                        cursor: 'pointer', border: '1.5px solid',
+                        transition: 'all 0.2s',
+                        marginLeft: 'auto',
+                        background: allAlertsEnabled ? 'rgba(15,224,224,0.1)' : 'rgba(239,68,68,0.1)',
+                        color: allAlertsEnabled ? 'var(--primary-light)' : '#ef4444',
+                        borderColor: allAlertsEnabled ? 'var(--primary-light)' : '#ef4444',
+                      }}
+                    >
+                      {allAlertsEnabled ? <Bell size={13} /> : <BellOff size={13} />}
+                      {allAlertsEnabled ? 'ALERTAS ACTIVAS' : 'ALERTAS SILENCIADAS'}
+                    </button>
+                  );
+                })()}
               </div>
 
               {/* Pathology + Doctor dropdowns */}
@@ -1775,7 +1852,20 @@ export default function App() {
                             )}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '14px' }}>
+                        <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                           {/* Alert toggle button — silences/activates alerts for this specific med */}
+                           <button
+                             onClick={() => toggleMedAlerts(med)}
+                             title={med.alertsEnabled === false ? 'Alertas silenciadas — clic para activar' : 'Alertas activas — clic para silenciar'}
+                             style={{
+                               background: 'none', border: 'none', padding: '2px', cursor: 'pointer',
+                               color: med.alertsEnabled === false ? '#ef4444' : 'var(--text-muted)',
+                               display: 'flex', alignItems: 'center',
+                               transition: 'color 0.2s',
+                             }}
+                           >
+                             {med.alertsEnabled === false ? <BellOff size={18} /> : <Bell size={18} />}
+                           </button>
                            <Share2 size={18} onClick={() => shareReportWhatsApp(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Compartir por WhatsApp" />
                            <Download size={18} onClick={() => exportPDF(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} title="Descargar PDF" />
                            <Pencil size={18} onClick={() => openEditModal(med)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
@@ -1959,6 +2049,35 @@ export default function App() {
                             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                           >
                             <RotateCcw size={18} />
+                          </button>
+                        )}
+
+                        {/* Complete Treatment button — only visible for active (non-completed) plans */}
+                        {!isCompleted && (
+                          <button
+                            onClick={() => markTreatmentComplete(med)}
+                            title="Marcar tratamiento como culminado"
+                            style={{
+                              height: '52px',
+                              padding: '0 14px',
+                              flexShrink: 0,
+                              background: 'rgba(16,185,129,0.08)',
+                              border: '1.5px solid rgba(16,185,129,0.4)',
+                              borderRadius: '14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              color: '#10b981',
+                              fontSize: '0.68rem',
+                              fontWeight: 900,
+                              transition: 'background 0.2s, border-color 0.2s',
+                              letterSpacing: '0.3px',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.18)'; e.currentTarget.style.borderColor = '#10b981'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)'; e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'; }}
+                          >
+                            <CheckCircle2 size={16} /> CULMINAR
                           </button>
                         )}
                       </div>

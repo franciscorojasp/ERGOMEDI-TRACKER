@@ -177,49 +177,64 @@ export const api = {
 
   /**
    * JSONP Implementation to BYPASS CORS COMPLETELY
+   *
+   * Always uses window.location.origin as appUrl so that all Vercel preview
+   * domains and the production domain are treated consistently by Google Apps Script.
+   * A stable counter-based name avoids random collisions, and the cleanup function
+   * is called unconditionally to prevent "jsonp_cb_XXXX is not defined" errors.
    */
   jsonp(action, params = {}) {
     return new Promise((resolve, reject) => {
-      const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
+      // Use timestamp + random integer for a truly unique, non-colliding name
+      const callbackName = 'jsonp_cb_' + Date.now() + '_' + (Math.random() * 1e6 | 0);
       const url = new URL(SCRIPT_URL);
       url.searchParams.append('action', action);
       url.searchParams.append('callback', callbackName);
 
+      // Always use the current page's origin — never a hardcoded fallback domain
       const appUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
-                     ? window.location.origin
-                     : 'https://ergomedi-tracker-git-main-franciscorojasp-1887s-projects.vercel.app';
-      url.searchParams.append('appUrl', appUrl);
+        ? window.location.origin
+        : '';
+      if (appUrl) url.searchParams.append('appUrl', appUrl);
 
       Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
 
       const script = document.createElement('script');
       script.src = url.toString();
 
+      let settled = false;
+
+      const cleanup = () => {
+        if (window[callbackName]) delete window[callbackName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+      };
+
+      // Register callback BEFORE appending script to the DOM
       window[callbackName] = (data) => {
+        if (settled) return;
+        settled = true;
         resolve(data);
         cleanup();
       };
 
       script.onerror = (e) => {
+        if (settled) return;
+        settled = true;
         console.error('JSONP Error:', e);
         reject(new Error('JSONP Request failed'));
         cleanup();
       };
 
-      const cleanup = () => {
-        delete window[callbackName];
-        if (script.parentNode) document.body.removeChild(script);
-      };
-
       document.body.appendChild(script);
-      
-      // Timeout after 20s
+
+      // Timeout after 25s — give slow GAS deployments more time
       setTimeout(() => {
-        if (window[callbackName]) {
+        if (!settled) {
+          settled = true;
           reject(new Error('JSONP Timeout'));
           cleanup();
         }
-      }, 20000);
+      }, 25000);
     });
   },
 
