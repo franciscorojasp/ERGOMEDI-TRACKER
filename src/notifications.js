@@ -123,6 +123,55 @@ async function _sendWhatsApp(phone, apikey, text) {
 }
 
 /**
+ * Checks if a treatment has expired based on its start date and duration in days.
+ * E.g., if started on 2026-09-01 with duration 5 days, the treatment runs on:
+ * Sep 1, 2, 3, 4, 5. On Sep 6 or later, it has concluded.
+ */
+export function isTreatmentExpired(startDate, durationDays, currentDateStr) {
+  if (!startDate || !durationDays || Number(durationDays) <= 0) return false;
+  const startStr = typeof startDate === 'string' ? startDate.split('T')[0] : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr)) return false;
+
+  const [sYear, sMonth, sDay] = startStr.split('-').map(Number);
+  const startDateObj = new Date(Date.UTC(sYear, sMonth - 1, sDay));
+  const endDateObj = new Date(startDateObj.getTime() + Number(durationDays) * 86400000);
+  const endYear = endDateObj.getUTCFullYear();
+  const endMonth = String(endDateObj.getUTCMonth() + 1).padStart(2, '0');
+  const endDay = String(endDateObj.getUTCDate()).padStart(2, '0');
+  const endStr = `${endYear}-${endMonth}-${endDay}`;
+
+  const today = currentDateStr || _localDateStr();
+  return today >= endStr;
+}
+
+/**
+ * Determines if a medication/plan is fully completed (culminated).
+ * Returns true if:
+ * 1. Status is explicitly completed (status === 'completed' or completed === true)
+ * 2. Total doses required have been taken (dosesTaken >= totalNeeded, with totalNeeded > 0)
+ * 3. The treatment period has elapsed (startDate + durationDays has passed)
+ */
+export function isMedCompleted(med, currentDateStr) {
+  if (!med) return true;
+  if (med.status === 'completed' || med.completed === true || String(med.completed).toLowerCase() === 'true') {
+    return true;
+  }
+
+  const timesPerDay = parseInt(med.timesPerDay) || 1;
+  const durationDays = parseInt(med.durationDays) || 0;
+  const dosesTaken = parseInt(med.dosesTaken) || 0;
+  const totalNeeded = durationDays * timesPerDay;
+
+  // Completed by doses
+  if (totalNeeded > 0 && dosesTaken >= totalNeeded) return true;
+
+  // Completed by calendar duration
+  if (isTreatmentExpired(med.startDate, durationDays, currentDateStr)) return true;
+
+  return false;
+}
+
+/**
  * Main check — called at the start of every new minute.
  * Compares current LOCAL device time against each scheduled dose time.
  * Only two alert points: -5 min and 0 min (exact time).
@@ -146,8 +195,10 @@ function _checkMeds(meds) {
 
   meds.forEach(med => {
     if (!Array.isArray(med.times)) return;
-    // Skip this medication if the user has disabled its alerts
-    if (med.alertsEnabled === false) return;
+    // Skip this medication if alerts are disabled
+    if (med.alertsEnabled === false || String(med.alertsEnabled).toLowerCase() === 'false') return;
+    // Skip this medication if the treatment is culminated / completed
+    if (isMedCompleted(med, today)) return;
 
     med.times.forEach(scheduledTime => {
       // Only 2 alerts: 5 minutes before and exact time
@@ -267,22 +318,29 @@ export const setupNotifications = (meds, config = {}) => {
     waApiKey: config.waApiKey || '',
   };
 
-  // Store reference to current meds for visibility handler
-  _currentMeds = meds;
+  // Only consider active, non-completed plans that have alerts enabled
+  const activeMeds = (meds || []).filter(m => 
+    m &&
+    m.alertsEnabled !== false && 
+    String(m.alertsEnabled).toLowerCase() !== 'false' &&
+    !isMedCompleted(m)
+  );
+
+  // Store reference to current active meds for visibility handler
+  _currentMeds = activeMeds;
 
   if (!('Notification' in window)) {
     // Still run the loop for WhatsApp alerts even without Web Push support
-    _startLoop(meds);
+    _startLoop(activeMeds);
     return;
   }
 
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(perm => {
-      if (perm === 'granted') _startLoop(meds);
-      else _startLoop(meds); // still start for WhatsApp alerts
+      _startLoop(activeMeds);
     });
   } else {
-    _startLoop(meds);
+    _startLoop(activeMeds);
   }
 };
 

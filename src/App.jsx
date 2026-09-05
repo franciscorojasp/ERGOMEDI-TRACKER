@@ -10,7 +10,7 @@ import {
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { api } from './api';
-import { setupNotifications, shareToWhatsApp, testWhatsApp, testWebPush, registerServiceWorkerPush } from './notifications';
+import { setupNotifications, isMedCompleted, isTreatmentExpired, shareToWhatsApp, testWhatsApp, testWebPush, registerServiceWorkerPush } from './notifications';
 
 const getDriveImageUrl = (url) => {
   if (!url) return null;
@@ -338,10 +338,7 @@ export default function App() {
   // Auto-setup notifications when meds or settings change for the logged-in user
   useEffect(() => {
     if (user && (!viewingUserId || viewingUserId === user.id)) {
-      const activePlansForNotifications = meds.filter(m => {
-        const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
-        return (m.dosesTaken || 0) < totalNeeded;
-      });
+      const activePlansForNotifications = meds.filter(m => !isMedCompleted(m, localToday()));
       setupNotifications(activePlansForNotifications, {
         phone:    user.phone    || '',
         waApiKey: user.waApiKey || '',
@@ -498,12 +495,14 @@ export default function App() {
   /** Mark a treatment as 100% complete immediately */
   const markTreatmentComplete = async (med) => {
     const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
-    if (!window.confirm(`¿Marcar el tratamiento de "${med.name}" como culminado? Esto establecerá las tomas al máximo (${totalNeeded}).`)) return;
+    if (!window.confirm(`¿Marcar el tratamiento de "${med.name}" como culminado? Esto establecerá las tomas al máximo (${totalNeeded}) y desactivará las alertas.`)) return;
     const updatedMed = {
       ...med,
-      dosesTaken: totalNeeded,
+      dosesTaken: totalNeeded > 0 ? totalNeeded : Math.max(med.dosesTaken || 0, 1),
       takenTodayCount: med.timesPerDay || 1,
       lastResetDate: localToday(),
+      status: 'completed',
+      alertsEnabled: false,
     };
     // Optimistic update
     setMeds(prev => prev.map(m => m.id === med.id ? updatedMed : m));
@@ -1274,8 +1273,7 @@ export default function App() {
   const filteredMeds = (meds || []).filter(m => {
     const matchPathology = selectedPathology === 'All' || (m.pathology || '').trim().toLowerCase() === selectedPathology.trim().toLowerCase();
     const matchDoctor = selectedDoctor === 'All' || (m.doctorName || '').trim().toLowerCase() === selectedDoctor.trim().toLowerCase();
-    const totalNeeded = (m.durationDays || 0) * (m.timesPerDay || 1);
-    const isCompleted = (m.dosesTaken || 0) >= totalNeeded;
+    const isCompleted = isMedCompleted(m, localToday());
     const matchStatus = selectedStatus === 'All' || (selectedStatus === 'completed' && isCompleted) || (selectedStatus === 'active' && !isCompleted);
     return matchPathology && matchDoctor && matchStatus;
   });
@@ -1284,7 +1282,7 @@ export default function App() {
   const statsAll = (meds || []).reduce((acc, m) => {
     const total = (m.durationDays || 0) * (m.timesPerDay || 1);
     const done = m.dosesTaken || 0;
-    const completed = done >= total;
+    const completed = isMedCompleted(m, localToday());
     acc.total++;
     acc.active += completed ? 0 : 1;
     acc.completed += completed ? 1 : 0;
@@ -1716,8 +1714,10 @@ export default function App() {
                     })
                     .map(med => {
                       const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
-                      const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
-                      const isCompleted = (med.dosesTaken || 0) >= totalNeeded;
+                      const isCompleted = isMedCompleted(med, localToday());
+                      const progress = isCompleted && totalNeeded > 0 && (med.dosesTaken || 0) >= totalNeeded
+                        ? 100
+                        : Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
                       return (
                         <div key={med.id} className="progress-overview-item animate-fade">
                           <div className="progress-overview-info">
@@ -1777,17 +1777,15 @@ export default function App() {
             <div className="meds-grid">
               {(() => {
                 const sortedMeds = [...filteredMeds].sort((a, b) => {
-                  const totalA = (a.durationDays || 0) * (a.timesPerDay || 1);
-                  const isCompletedA = (a.dosesTaken || 0) >= totalA;
-                  const totalB = (b.durationDays || 0) * (b.timesPerDay || 1);
-                  const isCompletedB = (b.dosesTaken || 0) >= totalB;
+                  const isCompletedA = isMedCompleted(a, localToday());
+                  const isCompletedB = isMedCompleted(b, localToday());
                   if (isCompletedA && !isCompletedB) return 1;
                   if (!isCompletedA && isCompletedB) return -1;
                   return 0;
                 });
                 return sortedMeds.map(med => {
                   const totalNeeded = (med.durationDays || 0) * (med.timesPerDay || 1);
-                  const isCompleted = (med.dosesTaken || 0) >= totalNeeded;
+                  const isCompleted = isMedCompleted(med, localToday());
                   const progress = Math.min(100, Math.round(((med.dosesTaken || 0) / (totalNeeded || 1)) * 100));
                   
                   const today = localToday(); // local date, not UTC

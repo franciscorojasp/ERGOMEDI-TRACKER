@@ -47,6 +47,8 @@ function setup() {
     var headers = medsSheet.getRange(1, 1, 1, medsSheet.getLastColumn()).getValues()[0];
     if (headers.indexOf('doctorName') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('doctorName');
     if (headers.indexOf('pathology') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('pathology');
+    if (headers.indexOf('alertsEnabled') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('alertsEnabled');
+    if (headers.indexOf('status') < 0) medsSheet.getRange(1, medsSheet.getLastColumn() + 1).setValue('status');
   }
 
   // History sheet
@@ -427,6 +429,14 @@ function doGet(e) {
     var med      = JSON.parse(e.parameter.data);
     var data3    = sheet3.getDataRange().getValues();
     var headers3 = data3[0];
+    if (headers3.indexOf('alertsEnabled') < 0) {
+      sheet3.getRange(1, headers3.length + 1).setValue('alertsEnabled');
+      headers3.push('alertsEnabled');
+    }
+    if (headers3.indexOf('status') < 0) {
+      sheet3.getRange(1, headers3.length + 1).setValue('status');
+      headers3.push('status');
+    }
     var rowIndex3 = -1;
     if (med.id) {
       for (var k = 1; k < data3.length; k++) {
@@ -438,8 +448,10 @@ function doGet(e) {
       if (h === 'userId')    return effectiveSaveId;
       if (h === 'times')     return JSON.stringify(med[h]);
       if (h === 'updatedAt') return new Date();
+      if (h === 'alertsEnabled') return (med.alertsEnabled === false || String(med.alertsEnabled).toLowerCase() === 'false') ? false : true;
+      if (h === 'status') return med.status || '';
       if (intFields.indexOf(h) >= 0) return parseInt(med[h]) || 0;
-      return med[h] || '';
+      return med[h] !== undefined && med[h] !== null ? med[h] : '';
     });
     if (rowIndex3 > -1) {
       sheet3.getRange(rowIndex3, 1, 1, row.length).setValues([row]);
@@ -642,6 +654,12 @@ function doGet(e) {
       if (obj6.times) {
         try { obj6.times = JSON.parse(obj6.times); } catch(e6) { obj6.times = []; }
       }
+      if (obj6.alertsEnabled !== undefined && obj6.alertsEnabled !== '') {
+        obj6.alertsEnabled = !(obj6.alertsEnabled === false || String(obj6.alertsEnabled).toLowerCase() === 'false');
+      } else {
+        obj6.alertsEnabled = true;
+      }
+      obj6.status = String(obj6.status || '');
       rows6.push(obj6);
     }
 
@@ -746,6 +764,28 @@ function checkAndSendAlerts() {
     return parseInt(parts[0]) * 60 + parseInt(parts[1]);
   }
 
+  function isTreatmentExpired(startDateVal, durationDays, userLocalDateStr) {
+    if (!startDateVal || !durationDays || durationDays <= 0) return false;
+    var startStr = '';
+    if (startDateVal instanceof Date) {
+      startStr = Utilities.formatDate(startDateVal, 'UTC', 'yyyy-MM-dd');
+    } else if (typeof startDateVal === 'string') {
+      startStr = startDateVal.split('T')[0];
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr)) return false;
+
+    var parts = startStr.split('-');
+    var sYear = parseInt(parts[0], 10);
+    var sMonth = parseInt(parts[1], 10) - 1;
+    var sDay = parseInt(parts[2], 10);
+
+    var startDateObj = new Date(Date.UTC(sYear, sMonth, sDay));
+    var endDateObj = new Date(startDateObj.getTime() + durationDays * 86400000);
+    var endStr = Utilities.formatDate(endDateObj, 'UTC', 'yyyy-MM-dd');
+
+    return userLocalDateStr >= endStr;
+  }
+
   function formatTime12h(timeStr) {
     if (!timeStr) return '';
     var parts = timeStr.split(':');
@@ -793,38 +833,84 @@ function checkAndSendAlerts() {
     var nowMins   = toMinutes(nowHHMM);
     var localDateStr = Utilities.formatDate(localDate, 'UTC', 'yyyy-MM-dd');
 
-    var processedMeds = {};
-
+    // Deduplicate user meds picking the latest / highest dosesTaken (matching getMeds)
+    var userMedsList = [];
     var medsHeaders  = medsData[0];
-    var docNameIdx   = medsHeaders.indexOf('doctorName');
-    var pathologyIdx = medsHeaders.indexOf('pathology');
+    for (var mRow = 1; mRow < medsData.length; mRow++) {
+      if (String(medsData[mRow][1]) !== userId) continue;
+      var medItem = {};
+      for (var col = 0; col < medsHeaders.length; col++) {
+        medItem[medsHeaders[col]] = medsData[mRow][col];
+      }
+      userMedsList.push(medItem);
+    }
 
-    for (var med = 1; med < medsData.length; med++) {
-      if (String(medsData[med][1]) !== userId) continue;
+    var byId = {};
+    userMedsList.forEach(function(m) {
+      var k = String(m.id);
+      if (!byId[k] || (parseInt(m.dosesTaken) || 0) >= (parseInt(byId[k].dosesTaken) || 0)) {
+        byId[k] = m;
+      }
+    });
 
-      var medId   = String(medsData[med][0]);
-      var medName = String(medsData[med][2]);
-      var dosage  = String(medsData[med][3]);
-      var docName = docNameIdx >= 0 ? String(medsData[med][docNameIdx] || '') : '';
-      var pathol  = pathologyIdx >= 0 ? String(medsData[med][pathologyIdx] || '') : '';
-      
-      var medKey = medName.trim().toLowerCase() + '|' + 
-                   dosage.trim().toLowerCase() + '|' + 
-                   docName.trim().toLowerCase() + '|' + 
-                   pathol.trim().toLowerCase();
-      if (processedMeds[medKey]) continue;
-      processedMeds[medKey] = true;
+    var byName = {};
+    Object.keys(byId).forEach(function(k) {
+      var m = byId[k];
+      var nk = String(m.name || '').trim().toLowerCase() + '|' + 
+               String(m.dosage || '').trim().toLowerCase() + '|' + 
+               String(m.doctorName || '').trim().toLowerCase() + '|' + 
+               String(m.pathology || '').trim().toLowerCase();
+      if (!byName[nk] || (parseInt(m.dosesTaken) || 0) >= (parseInt(byName[nk].dosesTaken) || 0)) {
+        byName[nk] = m;
+      }
+    });
 
-      var timesPerDay  = parseInt(medsData[med][5]) || 0;
-      var durationDays = parseInt(medsData[med][6]) || 0;
-      var dosesTaken   = parseInt(medsData[med][9]) || 0;
+    var userMeds = Object.keys(byName).map(function(k) { return byName[k]; });
+
+    for (var medIdx = 0; medIdx < userMeds.length; medIdx++) {
+      var medObj = userMeds[medIdx];
+
+      // Skip if alerts are disabled for this medication
+      if (medObj.alertsEnabled === false || String(medObj.alertsEnabled).toLowerCase() === 'false') {
+        continue;
+      }
+
+      // Skip if treatment is explicitly marked as completed
+      if (medObj.status === 'completed' || medObj.completed === true || String(medObj.completed).toLowerCase() === 'true') {
+        continue;
+      }
+
+      var timesPerDay  = parseInt(medObj.timesPerDay) || 0;
+      var durationDays = parseInt(medObj.durationDays) || 0;
+      var dosesTaken   = parseInt(medObj.dosesTaken) || 0;
       var totalNeeded  = timesPerDay * durationDays;
+
+      // Skip if treatment completed by doses
       if (totalNeeded > 0 && dosesTaken >= totalNeeded) {
         continue;
       }
 
-      var times   = [];
-      try { times = JSON.parse(medsData[med][4] || '[]'); } catch(e) {}
+      // Skip if treatment expired by calendar duration
+      if (isTreatmentExpired(medObj.startDate, durationDays, localDateStr)) {
+        continue;
+      }
+
+      var medId   = String(medObj.id);
+      var medName = String(medObj.name || '');
+      var dosage  = String(medObj.dosage || '');
+      var docName = String(medObj.doctorName || '');
+      var pathol  = String(medObj.pathology || '');
+      var medKey  = medName.trim().toLowerCase() + '|' + 
+                    dosage.trim().toLowerCase() + '|' + 
+                    docName.trim().toLowerCase() + '|' + 
+                    pathol.trim().toLowerCase();
+
+      var times = [];
+      if (Array.isArray(medObj.times)) {
+        times = medObj.times;
+      } else {
+        try { times = JSON.parse(medObj.times || '[]'); } catch(e) {}
+      }
 
       for (var t = 0; t < times.length; t++) {
         var scheduledTime = times[t];

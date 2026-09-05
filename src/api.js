@@ -324,7 +324,17 @@ export const api = {
       });
     }
 
-    return { ...med, times, lastResetDate: normalizeDate(med.lastResetDate) };
+    const alertsEnabled = (med.alertsEnabled === false || String(med.alertsEnabled).toLowerCase() === 'false') ? false : true;
+    const status = med.status ? String(med.status).trim().toLowerCase() : '';
+
+    return { 
+      ...med, 
+      times, 
+      lastResetDate: normalizeDate(med.lastResetDate),
+      startDate: normalizeDate(med.startDate),
+      alertsEnabled,
+      status
+    };
   }
 };
 
