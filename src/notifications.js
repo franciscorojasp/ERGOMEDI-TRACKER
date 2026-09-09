@@ -28,8 +28,16 @@
 let _sentToday = {};
 let _lastResetDate = '';
 
-// Current config (phone + api key)
-let _config = { phone: '', waApiKey: '' };
+// Current config (phone + api key + channel toggles)
+let _config = {
+  phone: '',
+  waApiKey: '',
+  notifyEmail: true,
+  notifyWhatsapp: true,
+  notifyTelegram: true,
+  notifySms: true,
+  notifyPush: true,
+};
 
 // Last checked minute — prevents duplicate checks within the same minute
 let _lastCheckedMinute = '';
@@ -248,10 +256,12 @@ function _checkMeds(meds) {
         }
 
         // Send Web Push (works when browser/app is open)
-        _sendWebNotification(title, body);
+        if (_config.notifyPush !== false) {
+          _sendWebNotification(title, body);
+        }
 
         // Send WhatsApp via CallMeBot (works regardless of app state)
-        if (_config.phone && _config.waApiKey) {
+        if (_config.notifyWhatsapp !== false && _config.phone && _config.waApiKey) {
           _sendWhatsApp(_config.phone, _config.waApiKey, waMsg);
         }
 
@@ -312,10 +322,15 @@ function _onVisibilityChange() {
  * @param {Object} config  - { phone: string, waApiKey: string }
  */
 export const setupNotifications = (meds, config = {}) => {
-  // Always update config so WhatsApp alerts use the latest credentials
+  // Always update config so alerts use the latest credentials and channel toggles
   _config = {
-    phone:    config.phone    || '',
-    waApiKey: config.waApiKey || '',
+    phone:          config.phone          || '',
+    waApiKey:       config.waApiKey       || '',
+    notifyEmail:    config.notifyEmail    !== false,
+    notifyWhatsapp: config.notifyWhatsapp !== false,
+    notifyTelegram: config.notifyTelegram !== false,
+    notifySms:      config.notifySms      !== false,
+    notifyPush:     config.notifyPush     !== false,
   };
 
   // Only consider active, non-completed plans that have alerts enabled

@@ -62,9 +62,9 @@ function setup() {
   var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
   if (!usersSheet) {
     var s = ss.insertSheet(USERS_SHEET_NAME);
-    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset','smsCarrier','email','telegramChatIds']);
-    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '']);
-    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '']);
+    s.appendRow(['id','identifier','name','lastLogin','role','phone','waApiKey','patientName','doctorName','utcOffset','smsCarrier','email','telegramChatIds','notifyEmail','notifyWhatsapp','notifyTelegram','notifySms','notifyPush']);
+    s.appendRow(['admin-001', ADMIN_EMAIL, 'Francisco Rojas (Admin)',       new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '', true, true, true, true, true]);
+    s.appendRow(['admin-002', ADMIN_PHONE, 'Francisco Rojas (Phone Admin)', new Date(), 'admin', ADMIN_PHONE, '', 'Francisco Rojas Pineda', '', -240, '', ADMIN_EMAIL, '', true, true, true, true, true]);
   } else {
     // Ensure new columns exist
     var headers = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
@@ -76,6 +76,11 @@ function setup() {
     if (headers.indexOf('smsCarrier')      < 0) usersSheet.getRange(1, 11).setValue('smsCarrier');
     if (headers.indexOf('email')           < 0) usersSheet.getRange(1, 12).setValue('email');
     if (headers.indexOf('telegramChatIds') < 0) usersSheet.getRange(1, 13).setValue('telegramChatIds');
+    if (headers.indexOf('notifyEmail')     < 0) usersSheet.getRange(1, 14).setValue('notifyEmail');
+    if (headers.indexOf('notifyWhatsapp')  < 0) usersSheet.getRange(1, 15).setValue('notifyWhatsapp');
+    if (headers.indexOf('notifyTelegram')  < 0) usersSheet.getRange(1, 16).setValue('notifyTelegram');
+    if (headers.indexOf('notifySms')       < 0) usersSheet.getRange(1, 17).setValue('notifySms');
+    if (headers.indexOf('notifyPush')      < 0) usersSheet.getRange(1, 18).setValue('notifyPush');
   }
 
   // Push subscriptions sheet
@@ -179,8 +184,8 @@ function doGet(e) {
       var newId = Utilities.getUuid();
       var role  = (identifier === ADMIN_EMAIL || identifier === ADMIN_PHONE) ? 'admin' : 'user';
       var initialEmail = identifier.indexOf('@') >= 0 ? identifier : '';
-      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset, '', initialEmail, '']);
-      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset, email: initialEmail, telegramChatIds: '' };
+      sheet.appendRow([newId, identifier, '', new Date(), role, '', '', '', '', utcOffset, '', initialEmail, '', true, true, true, true, true]);
+      result = { id: newId, identifier: identifier, role: role, patientName: '', doctorName: '', utcOffset: utcOffset, email: initialEmail, telegramChatIds: '', notifyEmail: true, notifyWhatsapp: true, notifyTelegram: true, notifySms: true, notifyPush: true };
     } else {
       var rowIndex = data.indexOf(user) + 1;
       sheet.getRange(rowIndex, 4).setValue(new Date()); // lastLogin
@@ -201,7 +206,12 @@ function doGet(e) {
         utcOffset:       utcOffset,
         smsCarrier:      user[10]             || '',
         email:           resolvedEmail,
-        telegramChatIds: user[12]             || ''
+        telegramChatIds: user[12]             || '',
+        notifyEmail:     user[13] !== false && String(user[13]).toLowerCase() !== 'false',
+        notifyWhatsapp:  user[14] !== false && String(user[14]).toLowerCase() !== 'false',
+        notifyTelegram:  user[15] !== false && String(user[15]).toLowerCase() !== 'false',
+        notifySms:       user[16] !== false && String(user[16]).toLowerCase() !== 'false',
+        notifyPush:      user[17] !== false && String(user[17]).toLowerCase() !== 'false'
       };
     }
   }
@@ -226,7 +236,12 @@ function doGet(e) {
           doctorName:      String(usData[ui][8] || ''),
           smsCarrier:      String(usData[ui][10] || ''),
           email:           uEmail,
-          telegramChatIds: String(usData[ui][12] || '')
+          telegramChatIds: String(usData[ui][12] || ''),
+          notifyEmail:     usData[ui][13] !== false && String(usData[ui][13]).toLowerCase() !== 'false',
+          notifyWhatsapp:  usData[ui][14] !== false && String(usData[ui][14]).toLowerCase() !== 'false',
+          notifyTelegram:  usData[ui][15] !== false && String(usData[ui][15]).toLowerCase() !== 'false',
+          notifySms:       usData[ui][16] !== false && String(usData[ui][16]).toLowerCase() !== 'false',
+          notifyPush:      usData[ui][17] !== false && String(usData[ui][17]).toLowerCase() !== 'false'
         });
       }
     }
@@ -380,6 +395,11 @@ function doGet(e) {
         if (profile.smsCarrier      !== undefined) sheet2.getRange(j + 1, 11).setValue(profile.smsCarrier);
         if (profile.email           !== undefined) sheet2.getRange(j + 1, 12).setValue(profile.email);
         if (profile.telegramChatIds !== undefined) sheet2.getRange(j + 1, 13).setValue(profile.telegramChatIds);
+        if (profile.notifyEmail     !== undefined) sheet2.getRange(j + 1, 14).setValue(profile.notifyEmail);
+        if (profile.notifyWhatsapp  !== undefined) sheet2.getRange(j + 1, 15).setValue(profile.notifyWhatsapp);
+        if (profile.notifyTelegram  !== undefined) sheet2.getRange(j + 1, 16).setValue(profile.notifyTelegram);
+        if (profile.notifySms       !== undefined) sheet2.getRange(j + 1, 17).setValue(profile.notifySms);
+        if (profile.notifyPush      !== undefined) sheet2.getRange(j + 1, 18).setValue(profile.notifyPush);
         break;
       }
     }
@@ -395,6 +415,54 @@ function doGet(e) {
                    'Recibirás las alertas de toma de medicamentos al instante en este chat.';
     var sentCount = sendTelegramAlerts(testChatIds, testText);
     result = { success: true, sentCount: sentCount };
+  }
+
+  // ---------- TEST EMAIL ----------
+  else if (action === 'testEmail') {
+    var testEmailAddr = e.parameter.email || '';
+    var testPatient   = e.parameter.patientName || 'Paciente';
+    if (testEmailAddr && testEmailAddr.indexOf('@') >= 0) {
+      var emailSub = '🔔 ERGOMEDI-TRACKER — Notificación de Prueba';
+      var emailBody = 'Hola ' + testPatient + ',\n\nLas notificaciones por correo de ERGOMEDI-TRACKER están activas y funcionando correctamente.';
+      var emailHtml = '<div style="font-family: sans-serif; padding: 20px; background: #0f172a; color: #f8fafc; border-radius: 12px; max-width: 500px; margin: 0 auto;">' +
+                      '<h2 style="color: #2dd4bf; margin-top: 0;">🔔 ERGOMEDI-TRACKER — Prueba Exitosa</h2>' +
+                      '<p>Hola <strong>' + testPatient + '</strong>,</p>' +
+                      '<p>Las alertas por correo electrónico están configuradas y funcionando con éxito.</p>' +
+                      '<div style="background: rgba(45,212,191,0.1); border-left: 4px solid #2dd4bf; padding: 12px; margin: 16px 0; border-radius: 6px;">' +
+                      'Recibirás recordatorios 5 minutos antes y en la hora exacta de cada toma médica programada.' +
+                      '</div>' +
+                      '<p style="font-size: 12px; color: #94a3b8; margin-top: 20px;">ERGOMEDI-TRACKER — Cuidando la salud de tu familia</p>' +
+                      '</div>';
+      try {
+        MailApp.sendEmail({ to: testEmailAddr, subject: emailSub, body: emailBody, htmlBody: emailHtml });
+        result = { success: true };
+      } catch (err) {
+        result = { success: false, error: err.toString() };
+      }
+    } else {
+      result = { success: false, error: 'Correo no válido' };
+    }
+  }
+
+  // ---------- TEST SMS ----------
+  else if (action === 'testSms') {
+    var testPhone   = String(e.parameter.phone || '').trim();
+    var testCarrier = String(e.parameter.smsCarrier || '').trim();
+    var testPatient = e.parameter.patientName || 'Paciente';
+    if (testPhone && testCarrier) {
+      var cleanPhone = testPhone.replace(/[^0-9]/g, '');
+      var smsDomain  = testCarrier.indexOf('@') < 0 ? ('@' + testCarrier) : testCarrier;
+      var smsTarget  = cleanPhone + smsDomain;
+      var smsBody    = 'ERGOMEDI SMS: Alerta de prueba configurada para ' + testPatient + '. ¡Tu salud es lo primero!';
+      try {
+        MailApp.sendEmail({ to: smsTarget, subject: 'ERGOMEDI SMS', body: smsBody });
+        result = { success: true };
+      } catch (err) {
+        result = { success: false, error: err.toString() };
+      }
+    } else {
+      result = { success: false, error: 'Se requiere teléfono y operador SMS' };
+    }
   }
 
   // ---------- SAVE PUSH SUBSCRIPTION ----------
@@ -818,6 +886,11 @@ function checkAndSendAlerts() {
     var smsCarrier      = String(userRow[10] || '');
     var storedEmail     = String(userRow[11] || '').trim();
     var telegramChatIds = String(userRow[12] || '').trim();
+    var notifyEmail     = userRow[13] !== false && String(userRow[13]).toLowerCase() !== 'false';
+    var notifyWhatsapp  = userRow[14] !== false && String(userRow[14]).toLowerCase() !== 'false';
+    var notifyTelegram  = userRow[15] !== false && String(userRow[15]).toLowerCase() !== 'false';
+    var notifySms       = userRow[16] !== false && String(userRow[16]).toLowerCase() !== 'false';
+    var notifyPush      = userRow[17] !== false && String(userRow[17]).toLowerCase() !== 'false';
 
     // Si utcOffset no está definido, por defecto usar Hora Legal de Venezuela (UTC-4 -> -240 mins)
     // NOTA: 0 es un offset válido (UTC+0), no debe reemplazarse por -240
@@ -1060,17 +1133,23 @@ function checkAndSendAlerts() {
           }
 
           // 1. Email (Texto Plano + HTML con Botón Interactivo)
-          if (userEmail && userEmail.indexOf('@') >= 0) {
+          if (notifyEmail && userEmail && userEmail.indexOf('@') >= 0) {
             try { MailApp.sendEmail({ to: userEmail, subject: subject, body: body, htmlBody: htmlBody }); } catch(err) {}
           }
 
           // 2. Telegram (Multi-destinatario: Paciente + Cuidadores)
-          if (telegramChatIds) {
+          if (notifyTelegram && telegramChatIds) {
             sendTelegramAlerts(telegramChatIds, tgMsg);
           }
 
-          // 3. Legacy SMS fallback
-          if (phone && smsCarrier) {
+          // 3. WhatsApp (CallMeBot)
+          if (notifyWhatsapp && phone && apiKey) {
+            var waMsgText = (alert.offset === -5 ? '⚠️ ' : '💊 ') + 'ERGOMEDI-TRACKER: ' + medName + ' (' + dosage + ') a las ' + scheduledTime + '. Abre la app para confirmar.';
+            try { sendWhatsAppMessage(phone, waMsgText, apiKey); } catch(err) {}
+          }
+
+          // 4. Legacy SMS fallback
+          if (notifySms && phone && smsCarrier) {
             var cleanPhone = phone.replace(/[^0-9]/g, '');
             var smsDomain  = smsCarrier.trim();
             if (smsDomain.indexOf('@') < 0) smsDomain = '@' + smsDomain;

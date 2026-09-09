@@ -5,12 +5,46 @@ import {
   Pencil, RotateCcw, History, Activity, Download, RefreshCw,
   ChevronRight, Volume2, VolumeX, LogOut, User, Image as ImageIcon,
   Send, Share2, Phone, Mail, ArrowRight, UserPlus, Shield,
-  Globe, Check, Menu, ChevronLeft, Users, Filter, TrendingUp
+  Globe, Check, Menu, ChevronLeft, Users, Filter, TrendingUp,
+  MessageSquare, Smartphone, ExternalLink
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { api } from './api';
 import { setupNotifications, isMedCompleted, isTreatmentExpired, shareToWhatsApp, testWhatsApp, testWebPush, registerServiceWorkerPush } from './notifications';
+
+function ToggleSwitch({ checked, onChange, disabled = false, theme = '', label = '', activeText = 'ACTIVADO', inactiveText = 'DESACTIVADO' }) {
+  return (
+    <div 
+      className="toggle-switch-container" 
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled) onChange(!checked);
+      }}
+      role="switch"
+      aria-checked={checked}
+      tabIndex={disabled ? -1 : 0}
+      onKeyDown={(e) => {
+        if ((e.key === ' ' || e.key === 'Enter') && !disabled) {
+          e.preventDefault();
+          e.stopPropagation();
+          onChange(!checked);
+        }
+      }}
+      style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+    >
+      <div className={`toggle-switch ${checked ? 'active' : ''} ${theme ? `theme-${theme}` : ''}`}>
+        <div className="toggle-thumb" />
+      </div>
+      {(activeText || inactiveText) && (
+        <span className={`toggle-badge ${checked ? 'active' : 'inactive'}`}>
+          {checked ? activeText : inactiveText}
+        </span>
+      )}
+      {label && <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{label}</span>}
+    </div>
+  );
+}
 
 const getDriveImageUrl = (url) => {
   if (!url) return null;
@@ -59,6 +93,7 @@ export default function App() {
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [testingChannel, setTestingChannel] = useState('');
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     const saved = localStorage.getItem('sidebar_expanded');
     return saved !== null ? JSON.parse(saved) : true;
@@ -118,7 +153,8 @@ export default function App() {
     takenTodayCount: 0,
     prescriptionUrl: '',
     doctorName: '',
-    pathology: ''
+    pathology: '',
+    alertsEnabled: true
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -340,11 +376,16 @@ export default function App() {
     if (user && (!viewingUserId || viewingUserId === user.id)) {
       const activePlansForNotifications = meds.filter(m => !isMedCompleted(m, localToday()));
       setupNotifications(activePlansForNotifications, {
-        phone:    user.phone    || '',
-        waApiKey: user.waApiKey || '',
+        phone:          user.phone          || '',
+        waApiKey:       user.waApiKey       || '',
+        notifyEmail:    user.notifyEmail    !== false,
+        notifyWhatsapp: user.notifyWhatsapp !== false,
+        notifyTelegram: user.notifyTelegram !== false,
+        notifySms:      user.notifySms      !== false,
+        notifyPush:     user.notifyPush     !== false,
       });
     }
-  }, [meds, user?.phone, user?.waApiKey, viewingUserId, user?.id]);
+  }, [meds, user?.phone, user?.waApiKey, user?.notifyEmail, user?.notifyWhatsapp, user?.notifyTelegram, user?.notifySms, user?.notifyPush, viewingUserId, user?.id]);
 
   const handleInstallPWA = async () => {
     if (!installPromptEvent) return;
@@ -1164,6 +1205,114 @@ export default function App() {
         localStorage.setItem('ergomedi_user', JSON.stringify(updated));
         return updated;
       });
+    }
+  };
+
+  const handleToggleChannel = async (channelKey) => {
+    const currentVal = activeProfile[channelKey] !== false;
+    const newVal = !currentVal;
+    handleProfileFieldChange(channelKey, newVal);
+    await updateProfile({ [channelKey]: newVal });
+  };
+
+  const handleTestEmail = async () => {
+    const emailToTest = activeProfile.email;
+    if (!emailToTest || emailToTest.indexOf('@') < 0) {
+      alert('Ingresa una dirección de correo válida para enviar la prueba.');
+      return;
+    }
+    setTestingChannel('email');
+    try {
+      const pName = activeProfile.patientName || activeProfile.name || 'Paciente';
+      const res = await api.testEmail(emailToTest, pName);
+      if (res && res.success) {
+        alert(`✅ Correo de prueba enviado con éxito a ${emailToTest}. Revisa tu bandeja de entrada o spam.`);
+      } else {
+        alert(`⚠️ No se pudo enviar el correo de prueba: ${res?.error || 'Verifica la configuración'}`);
+      }
+    } catch (err) {
+      alert('⚠️ Error de conexión al enviar el correo de prueba.');
+    } finally {
+      setTestingChannel('');
+    }
+  };
+
+  const handleTestWhatsApp = async () => {
+    const phoneToTest = activeProfile.phone;
+    const keyToTest = activeProfile.waApiKey;
+    if (!phoneToTest || !keyToTest) {
+      alert('Ingresa tu número de teléfono (+código país) y tu Clave API de CallMeBot antes de probar.');
+      return;
+    }
+    setTestingChannel('whatsapp');
+    try {
+      const res = await testWhatsApp(phoneToTest, keyToTest);
+      if (res) {
+        alert('✅ Solicitud de alerta enviada a WhatsApp. Revisa tu chat con CallMeBot en unos segundos.');
+      } else {
+        alert('⚠️ No se pudo enviar la alerta de WhatsApp.');
+      }
+    } catch (err) {
+      alert('⚠️ Error de conexión al enviar WhatsApp.');
+    } finally {
+      setTestingChannel('');
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!activeProfile.telegramChatIds) {
+      alert('Ingresa al menos un Chat ID de Telegram antes de probar.');
+      return;
+    }
+    setTestingChannel('telegram');
+    try {
+      const res = await api.testTelegram(activeProfile.telegramChatIds, activeProfile.patientName || activeProfile.name || 'Paciente');
+      if (res && res.sentCount > 0) {
+        alert(`✅ Alerta de prueba enviada con éxito a ${res.sentCount} destinatario(s) en Telegram.`);
+      } else {
+        alert('⚠️ No se pudo enviar. Verifica que los Chat IDs sean correctos y hayas presionado /start en el bot.');
+      }
+    } catch (err) {
+      alert('⚠️ Error de conexión al enviar prueba por Telegram.');
+    } finally {
+      setTestingChannel('');
+    }
+  };
+
+  const handleTestSms = async () => {
+    const phoneToTest = activeProfile.phone;
+    const carrierToTest = activeProfile.smsCarrier;
+    if (!phoneToTest || !carrierToTest) {
+      alert('Ingresa tu número de teléfono y el operador/gateway de SMS para realizar la prueba.');
+      return;
+    }
+    setTestingChannel('sms');
+    try {
+      const pName = activeProfile.patientName || activeProfile.name || 'Paciente';
+      const res = await api.testSms(phoneToTest, carrierToTest, pName);
+      if (res && res.success) {
+        alert(`✅ Mensaje SMS de prueba despachado hacia ${phoneToTest}.`);
+      } else {
+        alert(`⚠️ No se pudo despachar el SMS: ${res?.error || 'Error'}`);
+      }
+    } catch (err) {
+      alert('⚠️ Error de conexión al enviar SMS.');
+    } finally {
+      setTestingChannel('');
+    }
+  };
+
+  const handleTestPush = async () => {
+    setTestingChannel('push');
+    try {
+      const res = await testWebPush();
+      if (!res) {
+        alert('Habilita primero los permisos de notificaciones para probar.');
+      }
+    } catch (err) {
+      alert('⚠️ Error al disparar notificación push de prueba.');
+    } finally {
+      setTestingChannel('');
     }
   };
 
@@ -2421,157 +2570,375 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* ── NOTIFICACIONES DE TELEGRAM (MULTI-CUIDADORES) ── */}
+                  {/* ── CANALES DE ALERTA Y NOTIFICACIÓN ── */}
                   <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                        Alertas por Telegram (Multi-Cuidadores) <span style={{ color: '#0088cc', fontWeight: 700 }}>✓ Costo $0</span>
-                      </p>
-                      <span style={{
-                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        background: (activeProfile.telegramChatIds) ? 'rgba(0,136,204,0.15)' : 'rgba(255,255,255,0.08)',
-                        color: (activeProfile.telegramChatIds) ? '#0088cc' : 'var(--text-muted)',
-                        border: `1px solid ${(activeProfile.telegramChatIds) ? 'rgba(0,136,204,0.3)' : 'var(--border)'}`,
-                      }}>
-                        {(activeProfile.telegramChatIds) ? '● Configurado' : '○ Sin configurar'}
-                      </span>
-                    </div>
-
-                    {/* Instruction card */}
-                    <div style={{
-                      background: 'rgba(0,136,204,0.06)', borderRadius: '12px',
-                      border: '1px solid rgba(0,136,204,0.2)', padding: '14px', marginBottom: '16px',
-                    }}>
-                      <p style={{ fontSize: '0.65rem', fontWeight: 900, color: '#0088cc', marginBottom: '10px', letterSpacing: '0.5px' }}>
-                        📱 OBTENER CHAT IDs EN TELEGRAM (PACIENTE Y CUIDADORES)
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                        {[
-                          { n: '1', txt: 'Cada persona (adulto mayor y cuidadores) abre en Telegram el bot @userinfobot o presiona "Abrir Bot en Telegram".' },
-                          { n: '2', txt: 'Envía el comando /start. El bot te responderá con tu Id número único (Ej: 123456789).' },
-                          { n: '3', txt: 'Ingresa abajo los IDs de las personas que recibirán alertas, separados por comas.' },
-                        ].map(({ n, txt }) => (
-                          <div key={n} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                            <span style={{
-                              minWidth: '20px', height: '20px', borderRadius: '50%',
-                              background: 'rgba(0,136,204,0.25)', color: '#0088cc',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: '0.6rem', fontWeight: 900, flexShrink: 0,
-                            }}>{n}</span>
-                            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>{txt}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div className="input-group" style={{ marginBottom: 0 }}>
-                        <label style={{ fontWeight: 900, fontSize: '0.7rem', color: 'var(--primary-light)' }}>
-                          <Send size={14} style={{ display: 'inline', marginRight: '5px' }} /> CHAT IDs DE TELEGRAM (separados por comas)
-                        </label>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Ej: 123456789, 987654321  (ID Paciente, Cuidador 1, Cuidador 2)"
-                          value={activeProfile.telegramChatIds || ''}
-                          onChange={e => handleProfileFieldChange('telegramChatIds', e.target.value)}
-                          onBlur={() => updateProfile({ telegramChatIds: activeProfile.telegramChatIds })}
-                          style={{ background: 'var(--bg-main)' }}
-                        />
-                        <p style={{ fontSize: '0.58rem', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
-                          👥 Las alertas de toma de medicamentos llegarán a TODOS los Chat IDs ingresados en simultáneo.
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <p style={{ fontWeight: 900, fontSize: '0.75rem', color: 'var(--primary-light)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                          CANALES DE ALERTA Y NOTIFICACIÓN
+                        </p>
+                        <p style={{ fontSize: '0.62rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          Activa o desactiva con un botón deslizante cada canal para recibir recordatorios de toma médica.
                         </p>
                       </div>
                     </div>
 
-                    {/* Action buttons row */}
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => window.open('https://t.me/userinfobot', '_blank')}
-                        className="btn-primary"
-                        style={{ background: 'linear-gradient(135deg, #0088cc 0%, #005588 100%)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
-                      >
-                        <Send size={16} /> ABRIR BOT TELEGRAM
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!activeProfile.telegramChatIds) {
-                            alert('Ingresa al menos un Chat ID de Telegram antes de probar.');
-                            return;
-                          }
-                          const res = await api.testTelegram(activeProfile.telegramChatIds, activeProfile.patientName || activeProfile.name || 'Paciente');
-                          if (res && res.sentCount > 0) {
-                            alert(`✅ Alerta de prueba enviada con éxito a ${res.sentCount} destinatario(s) en Telegram.`);
-                          } else {
-                            alert('⚠️ No se pudo enviar. Verifica que los Chat IDs sean correctos y hayas presionado /start en Telegram.');
-                          }
-                        }}
-                        className="btn-primary"
-                        style={{ background: 'var(--bg-main)', border: '1px solid #0088cc', color: '#0088cc', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
-                      >
-                        <Bell size={16} /> PROBAR TELEGRAM
-                      </button>
+                    {/* 1. CANAL: CORREO ELECTRÓNICO */}
+                    <div className={`notification-channel-card ${activeProfile.notifyEmail !== false ? 'channel-enabled' : ''}`} style={{ marginTop: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: activeProfile.notifyEmail !== false ? 'rgba(234,67,53,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Mail size={18} style={{ color: activeProfile.notifyEmail !== false ? '#ea4335' : 'var(--text-muted)' }} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Notificaciones al Correo Electrónico
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Envío automático de recordatorios por email con botón de confirmación de toma.
+                            </p>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={activeProfile.notifyEmail !== false}
+                          onChange={() => handleToggleChannel('notifyEmail')}
+                          theme="email"
+                        />
+                      </div>
+
+                      {activeProfile.notifyEmail !== false && (
+                        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>DIRECCIÓN DE CORREO RECEPTOR</label>
+                            <input
+                              type="email"
+                              className="input-field"
+                              placeholder="Ej: paciente@correo.com"
+                              value={activeProfile.email || ''}
+                              onChange={e => handleProfileFieldChange('email', e.target.value)}
+                              onBlur={() => updateProfile({ email: activeProfile.email })}
+                              style={{ background: 'var(--bg-base)' }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={handleTestEmail}
+                              disabled={testingChannel === 'email'}
+                              className="btn-primary"
+                              style={{ background: 'var(--bg-main)', border: '1px solid #ea4335', color: '#ea4335', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Mail size={14} />
+                              {testingChannel === 'email' ? 'ENVIANDO PRUEBA...' : 'PROBAR CORREO'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
 
-                  {/* ── NOTIFICACIONES PUSH PWA (APP CERRADA - COSTO $0) ── */}
-                  <div style={{ paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <p style={{ fontWeight: 900, fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                        Notificaciones Push PWA (App Cerrada) <span style={{ color: '#0fe0e0', fontWeight: 700 }}>✓ Costo $0</span>
-                      </p>
-                      <span style={{
-                        fontSize: '0.55rem', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
-                        textTransform: 'uppercase', letterSpacing: '0.5px',
-                        background: (typeof Notification !== 'undefined' && Notification.permission === 'granted') ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.08)',
-                        color: (typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '#0fe0e0' : 'var(--text-muted)',
-                        border: `1px solid ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? 'rgba(15,224,224,0.3)' : 'var(--border)'}`,
-                      }}>
-                        {(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '● Activas' : '○ Desactivadas'}
-                      </span>
+                    {/* 2. CANAL: WHATSAPP */}
+                    <div className={`notification-channel-card ${activeProfile.notifyWhatsapp !== false ? 'channel-enabled' : ''}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: activeProfile.notifyWhatsapp !== false ? 'rgba(37,211,102,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <MessageSquare size={18} style={{ color: activeProfile.notifyWhatsapp !== false ? '#25D366' : 'var(--text-muted)' }} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Notificaciones al WhatsApp <span style={{ color: '#25D366', fontSize: '0.6rem', fontWeight: 700 }}>✓ CallMeBot 100% Gratis</span>
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Alertas directas a tu chat de WhatsApp (5 min antes y al momento exacto).
+                            </p>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={activeProfile.notifyWhatsapp !== false}
+                          onChange={() => handleToggleChannel('notifyWhatsapp')}
+                          theme="whatsapp"
+                        />
+                      </div>
+
+                      {activeProfile.notifyWhatsapp !== false && (
+                        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {/* Instructions Card */}
+                          <div style={{ background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: '12px', padding: '12px' }}>
+                            <p style={{ fontSize: '0.65rem', fontWeight: 800, color: '#25D366', margin: '0 0 8px 0' }}>
+                              ⚡ ACTIVACIÓN DE WHATSAPP (SOLO UNA VEZ)
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
+                              <div>1. Abre en WhatsApp el número <strong>+34 623 78 64 49</strong> o pulsa el botón verde abajo.</div>
+                              <div>2. Envía el texto: <code>I allow callmebot to send me messages</code></div>
+                              <div>3. Recibirás tu <strong>Clave API (apikey)</strong> en segundos. Pégala abajo para vincular.</div>
+                            </div>
+                            <div style={{ marginTop: '10px' }}>
+                              <button
+                                type="button"
+                                onClick={() => window.open('https://wa.me/34623786449?text=I%20allow%20callmebot%20to%20send%20me%20messages', '_blank')}
+                                className="btn-primary"
+                                style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', color: 'white', fontSize: '0.7rem', height: '34px', padding: '0 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <ExternalLink size={13} /> ACTIVAR EN WHATSAPP
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                            <div className="input-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>TELÉFONO (+ CÓDIGO PAÍS)</label>
+                              <input
+                                type="tel"
+                                className="input-field"
+                                placeholder="Ej: +584241234567"
+                                value={activeProfile.phone || ''}
+                                onChange={e => handleProfileFieldChange('phone', e.target.value)}
+                                onBlur={() => updateProfile({ phone: activeProfile.phone })}
+                                style={{ background: 'var(--bg-base)' }}
+                              />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>CLAVE API DE CALLMEBOT</label>
+                              <input
+                                type="text"
+                                className="input-field"
+                                placeholder="Ej: 1234567"
+                                value={activeProfile.waApiKey || ''}
+                                onChange={e => handleProfileFieldChange('waApiKey', e.target.value)}
+                                onBlur={() => updateProfile({ waApiKey: activeProfile.waApiKey })}
+                                style={{ background: 'var(--bg-base)' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={handleTestWhatsApp}
+                              disabled={testingChannel === 'whatsapp'}
+                              className="btn-primary"
+                              style={{ background: 'var(--bg-main)', border: '1px solid #25D366', color: '#25D366', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <MessageSquare size={14} />
+                              {testingChannel === 'whatsapp' ? 'ENVIANDO ALERTA...' : 'PROBAR WHATSAPP'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (typeof Notification === 'undefined') {
-                            alert('Tu navegador no soporta notificaciones push.');
-                            return;
-                          }
-                          const perm = await Notification.requestPermission();
-                          if (perm === 'granted') {
-                            await registerServiceWorkerPush();
-                            if (user?.id) {
-                              await api.savePushSubscription(user.id, { endpoint: window.location.origin });
-                            }
-                            alert('✅ Permisos concedidos y Service Worker registrado para notificaciones con la app cerrada.');
-                          } else {
-                            alert('⚠️ Permiso denegado. Habilita las notificaciones en la configuración de tu navegador.');
-                          }
-                        }}
-                        className="btn-primary"
-                        style={{ background: 'var(--primary)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
-                      >
-                        <Bell size={16} /> PERMITIR Y REGISTRAR PUSH
-                      </button>
+                    {/* 3. CANAL: TELEGRAM */}
+                    <div className={`notification-channel-card ${activeProfile.notifyTelegram !== false ? 'channel-enabled' : ''}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: activeProfile.notifyTelegram !== false ? 'rgba(0,136,204,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Send size={18} style={{ color: activeProfile.notifyTelegram !== false ? '#0088cc' : 'var(--text-muted)' }} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Notificaciones al Telegram <span style={{ color: '#0088cc', fontSize: '0.6rem', fontWeight: 700 }}>✓ Multi-Cuidadores</span>
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Alertas inmediatas simultáneas al paciente y a toda la red de cuidadores en Telegram.
+                            </p>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={activeProfile.notifyTelegram !== false}
+                          onChange={() => handleToggleChannel('notifyTelegram')}
+                          theme="telegram"
+                        />
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await testWebPush();
-                          if (!res) {
-                            alert('Habilita primero los permisos de notificaciones para probar.');
-                          }
-                        }}
-                        className="btn-primary"
-                        style={{ background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)', flex: 2, minWidth: '140px', fontSize: '0.75rem', height: '42px' }}
-                      >
-                        <Send size={16} /> PROBAR PUSH
-                      </button>
+                      {activeProfile.notifyTelegram !== false && (
+                        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ background: 'rgba(0,136,204,0.06)', borderRadius: '12px', border: '1px solid rgba(0,136,204,0.2)', padding: '12px' }}>
+                            <p style={{ fontSize: '0.65rem', fontWeight: 800, color: '#0088cc', margin: '0 0 8px 0' }}>
+                              📱 OBTENER CHAT IDs EN TELEGRAM (PACIENTE Y CUIDADORES)
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
+                              <div>1. Cada persona abre en Telegram el bot <strong>@userinfobot</strong> o pulsa "ABRIR BOT TELEGRAM".</div>
+                              <div>2. Envía <code>/start</code> y el bot responderá con su número ID único (Ej: 123456789).</div>
+                              <div>3. Ingresa abajo los IDs separados por comas para que todos reciban la alerta a la vez.</div>
+                            </div>
+                          </div>
+
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>CHAT IDs DE TELEGRAM (SEPARADOS POR COMAS)</label>
+                            <input
+                              type="text"
+                              className="input-field"
+                              placeholder="Ej: 123456789, 987654321 (Paciente, Cuidador 1, Cuidador 2)"
+                              value={activeProfile.telegramChatIds || ''}
+                              onChange={e => handleProfileFieldChange('telegramChatIds', e.target.value)}
+                              onBlur={() => updateProfile({ telegramChatIds: activeProfile.telegramChatIds })}
+                              style={{ background: 'var(--bg-base)' }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={() => window.open('https://t.me/userinfobot', '_blank')}
+                              className="btn-primary"
+                              style={{ background: 'linear-gradient(135deg, #0088cc 0%, #005588 100%)', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <ExternalLink size={14} /> ABRIR BOT TELEGRAM
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleTestTelegram}
+                              disabled={testingChannel === 'telegram'}
+                              className="btn-primary"
+                              style={{ background: 'var(--bg-main)', border: '1px solid #0088cc', color: '#0088cc', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Bell size={14} />
+                              {testingChannel === 'telegram' ? 'ENVIANDO PRUEBA...' : 'PROBAR TELEGRAM'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. CANAL: MENSAJES DE TEXTO (SMS) */}
+                    <div className={`notification-channel-card ${activeProfile.notifySms !== false ? 'channel-enabled' : ''}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: activeProfile.notifySms !== false ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Smartphone size={18} style={{ color: activeProfile.notifySms !== false ? '#f59e0b' : 'var(--text-muted)' }} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Notificaciones por SMS (Mensaje de Texto)
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Alertas por SMS a teléfonos móviles vía pasarela celular (email-to-sms gateway).
+                            </p>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={activeProfile.notifySms !== false}
+                          onChange={() => handleToggleChannel('notifySms')}
+                          theme="sms"
+                        />
+                      </div>
+
+                      {activeProfile.notifySms !== false && (
+                        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                            <div className="input-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>TELÉFONO PARA SMS</label>
+                              <input
+                                type="tel"
+                                className="input-field"
+                                placeholder="Ej: 04241234567"
+                                value={activeProfile.phone || ''}
+                                onChange={e => handleProfileFieldChange('phone', e.target.value)}
+                                onBlur={() => updateProfile({ phone: activeProfile.phone })}
+                                style={{ background: 'var(--bg-base)' }}
+                              />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontWeight: 800, fontSize: '0.65rem', color: 'var(--text-secondary)' }}>OPERADOR / PASARELA SMS</label>
+                              <input
+                                type="text"
+                                className="input-field"
+                                placeholder="Ej: @movistar.net.ve o @sms.gateway"
+                                value={activeProfile.smsCarrier || ''}
+                                onChange={e => handleProfileFieldChange('smsCarrier', e.target.value)}
+                                onBlur={() => updateProfile({ smsCarrier: activeProfile.smsCarrier })}
+                                style={{ background: 'var(--bg-base)' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={handleTestSms}
+                              disabled={testingChannel === 'sms'}
+                              className="btn-primary"
+                              style={{ background: 'var(--bg-main)', border: '1px solid #f59e0b', color: '#f59e0b', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Smartphone size={14} />
+                              {testingChannel === 'sms' ? 'ENVIANDO SMS...' : 'PROBAR SMS'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 5. CANAL: NOTIFICACIONES PUSH PWA */}
+                    <div className={`notification-channel-card ${activeProfile.notifyPush !== false ? 'channel-enabled' : ''}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: activeProfile.notifyPush !== false ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Bell size={18} style={{ color: activeProfile.notifyPush !== false ? '#0fe0e0' : 'var(--text-muted)' }} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                              Notificaciones Push PWA <span style={{ color: '#0fe0e0', fontSize: '0.6rem', fontWeight: 700 }}>✓ Pantalla / App Cerrada</span>
+                            </h4>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Avisos directos en la pantalla o barra de notificaciones del dispositivo.
+                            </p>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={activeProfile.notifyPush !== false}
+                          onChange={() => handleToggleChannel('notifyPush')}
+                          theme="push"
+                        />
+                      </div>
+
+                      {activeProfile.notifyPush !== false && (
+                        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                              Estado de permisos en tu equipo:{' '}
+                              <strong style={{ color: (typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '#0fe0e0' : '#f59e0b' }}>
+                                {(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? '● Permisos Concedidos' : '○ Permiso Pendiente'}
+                              </strong>
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (typeof Notification === 'undefined') {
+                                  alert('Tu navegador no soporta notificaciones push.');
+                                  return;
+                                }
+                                const perm = await Notification.requestPermission();
+                                if (perm === 'granted') {
+                                  await registerServiceWorkerPush();
+                                  if (user?.id) {
+                                    await api.savePushSubscription(user.id, { endpoint: window.location.origin });
+                                  }
+                                  alert('✅ Permisos concedidos y Service Worker registrado para notificaciones.');
+                                } else {
+                                  alert('⚠️ Permiso denegado. Habilita las notificaciones en la configuración de tu navegador.');
+                                }
+                              }}
+                              className="btn-primary"
+                              style={{ background: 'var(--primary)', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Bell size={14} /> PERMITIR Y REGISTRAR PUSH
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleTestPush}
+                              disabled={testingChannel === 'push'}
+                              className="btn-primary"
+                              style={{ background: 'var(--bg-main)', border: '1px solid var(--primary-light)', color: 'var(--primary-light)', fontSize: '0.72rem', height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Send size={14} />
+                              {testingChannel === 'push' ? 'DISPARANDO PUSH...' : 'PROBAR PUSH'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2641,9 +3008,16 @@ export default function App() {
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', color: 'var(--text-secondary)', background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.7rem', color: 'var(--text-secondary)', background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '10px' }}>
                         <div><strong>Email:</strong> {usr.email || '(No asignado)'}</div>
                         <div><strong>Telegram IDs:</strong> {usr.telegramChatIds || '(Sin notificaciones)'}</div>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                          <span style={{ fontSize: '0.58rem', padding: '2px 6px', borderRadius: '6px', background: usr.notifyEmail !== false ? 'rgba(234,67,53,0.15)' : 'rgba(255,255,255,0.05)', color: usr.notifyEmail !== false ? '#ea4335' : 'var(--text-muted)' }}>Email {usr.notifyEmail !== false ? '✓' : '✕'}</span>
+                          <span style={{ fontSize: '0.58rem', padding: '2px 6px', borderRadius: '6px', background: usr.notifyWhatsapp !== false ? 'rgba(37,211,102,0.15)' : 'rgba(255,255,255,0.05)', color: usr.notifyWhatsapp !== false ? '#25D366' : 'var(--text-muted)' }}>WhatsApp {usr.notifyWhatsapp !== false ? '✓' : '✕'}</span>
+                          <span style={{ fontSize: '0.58rem', padding: '2px 6px', borderRadius: '6px', background: usr.notifyTelegram !== false ? 'rgba(0,136,204,0.15)' : 'rgba(255,255,255,0.05)', color: usr.notifyTelegram !== false ? '#0088cc' : 'var(--text-muted)' }}>Telegram {usr.notifyTelegram !== false ? '✓' : '✕'}</span>
+                          <span style={{ fontSize: '0.58rem', padding: '2px 6px', borderRadius: '6px', background: usr.notifySms !== false ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', color: usr.notifySms !== false ? '#f59e0b' : 'var(--text-muted)' }}>SMS {usr.notifySms !== false ? '✓' : '✕'}</span>
+                          <span style={{ fontSize: '0.58rem', padding: '2px 6px', borderRadius: '6px', background: usr.notifyPush !== false ? 'rgba(15,224,224,0.15)' : 'rgba(255,255,255,0.05)', color: usr.notifyPush !== false ? '#0fe0e0' : 'var(--text-muted)' }}>Push {usr.notifyPush !== false ? '✓' : '✕'}</span>
+                        </div>
                       </div>
                     </div>
 
@@ -2773,6 +3147,23 @@ export default function App() {
                     }} style={{ background: 'var(--bg-main)', padding: '9px 14px' }} />
                   ))}
                 </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-main)', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {formData.alertsEnabled !== false ? <Bell size={18} style={{ color: 'var(--primary-light)' }} /> : <BellOff size={18} style={{ color: '#ef4444' }} />}
+                    <div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-primary)' }}>Alertas para este medicamento</span>
+                      <p style={{ margin: 0, fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                        {formData.alertsEnabled !== false ? 'Avisos activos para las tomas programadas' : 'Recordatorios silenciados para este plan'}
+                      </p>
+                    </div>
+                  </div>
+                  <ToggleSwitch
+                    checked={formData.alertsEnabled !== false}
+                    onChange={(val) => setFormData({ ...formData, alertsEnabled: val })}
+                  />
+                </div>
+
                 <button type="submit" className="btn-primary" style={{ height: '48px', fontWeight: 900, marginTop: '4px', fontSize: '0.85rem' }}>GUARDAR EN GOOGLE SHEETS</button>
               </form>
             </div>

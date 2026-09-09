@@ -44,6 +44,14 @@ export const api = {
     return this.jsonp('testTelegram', { telegramChatIds, patientName });
   },
 
+  async testEmail(email, patientName = '') {
+    return this.jsonp('testEmail', { email, patientName });
+  },
+
+  async testSms(phone, smsCarrier = '', patientName = '') {
+    return this.jsonp('testSms', { phone, smsCarrier, patientName });
+  },
+
   async savePushSubscription(userId, subscriptionData) {
     const data = JSON.stringify(subscriptionData);
     return this.jsonp('savePushSubscription', { userId, data });
